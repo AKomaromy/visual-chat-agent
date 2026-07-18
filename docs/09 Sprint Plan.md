@@ -28,6 +28,8 @@ These are the highest-leverage, most sequence-dependent tasks — do them in thi
 
 **Judging contribution:** de-risks the entire 25%-weighted Use of ClickHouse & Trigger.dev criterion before any other code is written — this is the one integration that, if broken, invalidates everything built afterward.
 
+**Status: ✅ Passed live.** ClickHouse Cloud (Mini, 1 replica, ca-central-1) and Trigger.dev project `visual-chat-agent` (org Attentionic Inc.) are both provisioned and connected. Live run `run_cmrqqchcf692g0jomsjtyzk7t` completed with `confirmed: true` against real infrastructure — not a fixture.
+
 ---
 
 ### Task 2 — Prove the riskiest integration with a fixture, immediately

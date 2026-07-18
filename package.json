@@ -17,7 +17,10 @@
     "react-dom": "19.2.7",
     "@clickhouse/client": "1.23.1",
     "@trigger.dev/sdk": "4.5.4",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "ai": "7.0.31",
+    "@ai-sdk/react": "4.0.34",
+    "@ai-sdk/anthropic": "4.0.16"
   },
   "devDependencies": {
     "typescript": "5.9.3",

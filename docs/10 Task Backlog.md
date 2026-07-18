@@ -54,7 +54,7 @@ If the combined payload risks the ~1 MiB Trigger.dev stream-record limit (unlike
 
 No `raw`/`core`/`mart` layer separation, no `ops.*` telemetry tables, no `ref.geonames_*` tables (GDELT's own country/lat-long fields are used directly — no admin-level normalization join), no CDC tables (there's no Postgres to replicate from). If Stage B's vector-retrieval stretch item is attempted, add an `embedding` column to `articles` then — not before.
 
-**Status: ⬜ not started (Task 3).** ClickHouse Cloud service exists and is reachable (`lib/clickhouse.ts`, verified live in Task 1) but none of these three tables have been created yet. Only the scratch table `_scratch_connectivity_check` (Task 1's diagnostic, unrelated to the product schema) currently exists in the service.
+**Status: ✅ done (Task 3), passed live.** All three tables exist in the ClickHouse Cloud service, created by `trigger/init-schema.ts` (idempotent — `CREATE TABLE IF NOT EXISTS`). `h3_r5` on `articles` is a `MATERIALIZED` column (`geoToH3(longitude, latitude, 5)`), computed by ClickHouse itself at insert time, not by application code. `item_type` on `profile_cards` is an `Enum8` over the four allowed values. The scratch table `_scratch_connectivity_check` (Task 1's diagnostic, unrelated to the product schema) still exists alongside them — unchanged, still harmless.
 
 ---
 
@@ -63,7 +63,7 @@ No `raw`/`core`/`mart` layer separation, no `ops.*` telemetry tables, no `ref.ge
 Reordered per the pre-implementation design review (`12 Scope Gate.md` §7.6) — the `chat.agent()` skeleton comes second, before schema or seed work, because it's the highest-uncertainty piece and has no dependency on either.
 
 1. ✅ `mirror-agent` skeleton with a fixture manifest (Task 2) — code complete, live model-call test pending (`ANTHROPIC_API_KEY`).
-2. `articles`, `profile_cards`, `artifacts` tables, including the H3 known-coordinate sanity check (Task 3).
+2. ✅ `articles`, `profile_cards`, `artifacts` tables, including the H3 known-coordinate sanity check (Task 3) — passed live.
 3. `seed-gdelt` task across 3–5 topically diverse queries; run it once; do the manual keyword-diversity check before writing any further code (Task 4).
 4. `profile_cards` seed rows for Profile A (via paste-extraction) and Profile B (pre-seeded fixture).
 5. `getBriefing` tool wired to real queries, replacing the fixture (Task 5).

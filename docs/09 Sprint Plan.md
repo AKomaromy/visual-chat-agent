@@ -52,6 +52,8 @@ These are the highest-leverage, most sequence-dependent tasks — do them in thi
 
 **Judging contribution:** Technical Implementation (a clean, typed, purpose-built schema) and the direct substrate for every later Use-of-Stack claim.
 
+**Status: ✅ Passed live.** `trigger/init-schema.ts` creates `articles`, `profile_cards`, `artifacts` (all plain `MergeTree`) and, in the same run, executes the acceptance checks. Live run `run_cmrqsolvs7xqk0pll42any3xp` completed with all four checks true: insert/select round trip on all three tables, and the H3 known-coordinate sanity check (New York City → `h3_r5` decodes back to a point ~15.95 km away, well inside the 25 km bound for an r5 cell). Test rows are deleted at the end of the task, so `articles` is empty and ready for Task 4's no-op check. Confirmed live: ClickHouse's `geoToH3`/`h3ToGeo` take `(longitude, latitude, ...)`, not `(lat, lon)` — see `docs/14 Engineering Handoff.md`.
+
 ---
 
 ### Task 4 — Build the resilient, replayable seed ingestion — and verify it can actually differentiate two profiles
@@ -89,7 +91,7 @@ Six sessions, front-loaded on Stage A. Each session ends with something that run
 
 **Total: ~17.5–18.5h**, inside the 15–20h budget with a small buffer. If actual free time comes in lower, cut inside Session 5 first (pre-seed *both* profiles instead of live-pasting Profile A) before touching anything in Sessions 1–4 — those five tasks are the required story itself.
 
-**Status:** Session 1 in progress — Task 1 passed live; Task 2 code complete, pending the live model-call test (one credential away). Sessions 2–6 not started. Full detail: `docs/14 Engineering Handoff.md`.
+**Status:** Session 1 in progress — Task 1 passed live; Task 2 code complete, pending the live model-call test (one credential away, `ANTHROPIC_API_KEY`). Task 3 passed live. Task 4–5 and Sessions 2–6 not started. Full detail: `docs/14 Engineering Handoff.md`.
 
 Stage B (if any hours remain after Session 6): attempt the ranked stretch list in `12 Scope Gate.md` §5, in order, stopping the moment the remaining time runs out. Never start a Stage B item that can't be finished and rolled back cleanly if it destabilizes the working Stage A deployment.
 

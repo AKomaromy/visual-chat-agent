@@ -2,6 +2,7 @@
 
 **Status:** Trimmed, engineering-ready backlog for the ~15–20 hour scope defined in `12 Scope Gate.md`. Replaces the prior multi-workflow, multi-tool backlog. Everything here maps directly onto `09 Sprint Plan.md`'s five ordered tasks and six sessions.
 **Companion documents:** `05 Architecture.md`/`06 Data.md`/`07 Tech Stack.md` for full-scope technical reference (read through the `12 Scope Gate.md` filter — most of their detail exceeds this build's scope), `09 Sprint Plan.md`
+**Current implementation status:** see `docs/14 Engineering Handoff.md` for the authoritative, up-to-date state (commit hashes, verified tests, exact next step). The status notes inline below (WF-A, `getBriefing`, schema) are kept current but the Handoff doc is the single source of truth if anything here goes stale.
 
 ---
 
@@ -10,7 +11,10 @@
 ### WF-A — `mirror-agent` (`chat.agent()`)
 **Key:** stable `chatId`. **Responsibilities:** maintain the conversation; call the one combined analytical tool (§2); stream progress and the compact manifest; validate and persist it; return an artifact reference. **Retry:** transient model/tool failures only. **Idempotency:** turn ID prevents duplicate artifact creation.
 
+**Status: 🟡 implemented at `trigger/chat.ts`, not yet run live.** `chatId` keying comes from `useChat({ id: chatId })` in `app/components/chat.tsx` (`${profileId}-chat`), not a separate idempotency key yet. Artifact persistence (writing to the `artifacts` table) is not implemented — that lands with Task 5, once the `articles`/`artifacts` tables exist (Task 3). Blocked on `ANTHROPIC_API_KEY` for the first live run — see `docs/14 Engineering Handoff.md`.
+
 ### WF-B — `seed-gdelt`
+**Status: ⬜ not started** (Task 4).
 **Type:** manually triggered/replayable, run once before the demo (and again any time the seed needs refreshing). **Responsibilities:** run **3–5 distinct GDELT DOC 2.0 API queries** on deliberately different topics (not one narrow query — a single-topic seed can't demonstrate personalization differentiation, see `12 Scope Gate.md` §7.2); derive a lightweight keyword tag list per article from its title (do not attempt to parse GDELT's GKG feed — it's a dense, undocumented-to-us format and the DOC 2.0 API's simpler JSON is sufficient, see `12 Scope Gate.md` §7.1); compute `h3_r5` from `sourcecountry`; batch-insert into `articles`. **Idempotency:** no-op if `articles` already has rows — a one-time seed load doesn't need per-row fingerprint deduplication (`12 Scope Gate.md` §7.3); re-seeding from scratch is a manual truncate.
 
 That's the complete Trigger.dev surface for this build. Everything else in the original workflow catalogue (`schedule-gdelt`, `fetch-rss`, `normalize-locations` as a separate stage, `embed-chunks`, `score-relevance` as a separate async stage, `build-entity-edges`, `reconcile-pipeline`) is cut — its responsibilities are either folded into WF-B (location/H3 computation happens inline during normalization) or into the WF-A tool itself (relevance scoring happens synchronously, at query time, not as a separate precomputed stage).
@@ -26,6 +30,8 @@ That's the complete Trigger.dev surface for this build. Everything else in the o
 
 If the combined payload risks the ~1 MiB Trigger.dev stream-record limit (unlikely at seed-data scale, but check), split into `getSignals` + `getMapData` rather than adding a third unrelated tool.
 
+**Status: 🟡 implemented as a fixture at `trigger/chat.ts` (`getBriefing`), not yet real.** Input is currently `{ profileId }` only (no free-text question passed through, since there's one response pattern - matches the spec above). `execute` returns one of two hard-coded manifests keyed by `"profile-a"`/`"profile-b"`, matching Demo Contract §2-3. **Task 5 replaces only the inside of `execute`** with the real ranked-signal/timeline/H3 queries described above - the tool's input/output shape is already final.
+
 ---
 
 ## 3. Manifest (simplified)
@@ -35,6 +41,8 @@ If the combined payload risks the ~1 MiB Trigger.dev stream-record limit (unlike
 **Renderer order:** (1) Impact Radar, (2) Timeline, (3) Map, (4) Evidence Drawer (always available, not a competing "view").
 
 **Validation:** structural schema check → every ranked/plotted item has a resolvable evidence article ID → map is only included if at least a handful of items have valid coordinates → persist, then stream the reference. This is a small fraction of the original five-stage validation pipeline — the missing stages (renderer-compatibility versioning, semantic-policy checks for four response patterns) have no job to do with one response pattern and three view types.
+
+**Status: 🟡 schema implemented at `lib/visual-response.ts` (`visualResponseManifestSchema`), validation and persistence not yet wired.** The Zod schema matches the envelope above exactly. What's not yet built: the "every item has a resolvable evidence article ID" check, the map-inclusion threshold check, and persistence to the `artifacts` table (all pending Task 3/5, since there's no `articles`/`artifacts` table to validate against or persist to yet).
 
 ---
 
@@ -46,13 +54,15 @@ If the combined payload risks the ~1 MiB Trigger.dev stream-record limit (unlike
 
 No `raw`/`core`/`mart` layer separation, no `ops.*` telemetry tables, no `ref.geonames_*` tables (GDELT's own country/lat-long fields are used directly — no admin-level normalization join), no CDC tables (there's no Postgres to replicate from). If Stage B's vector-retrieval stretch item is attempted, add an `embedding` column to `articles` then — not before.
 
+**Status: ⬜ not started (Task 3).** ClickHouse Cloud service exists and is reachable (`lib/clickhouse.ts`, verified live in Task 1) but none of these three tables have been created yet. Only the scratch table `_scratch_connectivity_check` (Task 1's diagnostic, unrelated to the product schema) currently exists in the service.
+
 ---
 
 ## 5. Build order
 
 Reordered per the pre-implementation design review (`12 Scope Gate.md` §7.6) — the `chat.agent()` skeleton comes second, before schema or seed work, because it's the highest-uncertainty piece and has no dependency on either.
 
-1. `mirror-agent` skeleton with a fixture manifest (Task 2).
+1. ✅ `mirror-agent` skeleton with a fixture manifest (Task 2) — code complete, live model-call test pending (`ANTHROPIC_API_KEY`).
 2. `articles`, `profile_cards`, `artifacts` tables, including the H3 known-coordinate sanity check (Task 3).
 3. `seed-gdelt` task across 3–5 topically diverse queries; run it once; do the manual keyword-diversity check before writing any further code (Task 4).
 4. `profile_cards` seed rows for Profile A (via paste-extraction) and Profile B (pre-seeded fixture).

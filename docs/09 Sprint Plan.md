@@ -40,6 +40,8 @@ These are the highest-leverage, most sequence-dependent tasks — do them in thi
 
 **Judging contribution:** `chat.agent()` is a recent, still-evolving SDK surface (`11 Risks.md` R-01) — the highest-uncertainty integration in the entire build. Proving it now, before any schema or seed-data work is sunk, is what makes the rest of the budget low-risk. If this task runs badly over estimate, that's exactly the signal to know on day one, not day five.
 
+**Status: 🟡 Code complete, not yet run live.** `chat.agent()` (`mirror-agent`), the `getBriefing` tool with a two-profile fixture, both server actions, and the frontend chat page are written, committed, and pass typecheck/lint/build. Blocked on one credential (`ANTHROPIC_API_KEY`) before the actual model call can be exercised — see `docs/14 Engineering Handoff.md` for the exact next step.
+
 ---
 
 ### Task 3 — Lay down the minimum schema
@@ -86,6 +88,8 @@ Six sessions, front-loaded on Stage A. Each session ends with something that run
 | 6 | ~2.5–3h | Deploy; rehearse the two-profile flow three times consecutively; fix whatever breaks; record the demo; write the README | A public deployment, a passing three-times-consecutive rehearsal, and a recorded demo |
 
 **Total: ~17.5–18.5h**, inside the 15–20h budget with a small buffer. If actual free time comes in lower, cut inside Session 5 first (pre-seed *both* profiles instead of live-pasting Profile A) before touching anything in Sessions 1–4 — those five tasks are the required story itself.
+
+**Status:** Session 1 in progress — Task 1 passed live; Task 2 code complete, pending the live model-call test (one credential away). Sessions 2–6 not started. Full detail: `docs/14 Engineering Handoff.md`.
 
 Stage B (if any hours remain after Session 6): attempt the ranked stretch list in `12 Scope Gate.md` §5, in order, stopping the moment the remaining time runs out. Never start a Stage B item that can't be finished and rolled back cleanly if it destabilizes the working Stage A deployment.
 

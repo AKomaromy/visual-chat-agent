@@ -48,6 +48,10 @@ The highest risks are not scale. They are: failing to show meaningful required-p
 | R-28 | Local/production deployment mismatch | 3 | 4 | 12 | Platform lead |
 | R-29 | No-data or stale-data turns fail awkwardly | 3 | 3 | 9 | Agent/frontend lead |
 | R-30 | Architecture is impressive but cannot be explained quickly | 3 | 4 | 12 | CTO |
+| R-31 | Secrets pasted directly into the chat transcript | 4 | 3 | 12 | Platform lead |
+| R-32 | Blind "latest" dependency pinning breaks against bleeding-edge releases | 3 | 2 | 6 | Platform lead |
+
+R-31 and R-32 were discovered during implementation, not in the original design review — see §10 for detail.
 
 R-05 and R-18 carry higher likelihood than the source register's RSS-oriented framing because GDELT is now the sole P0 source (`05 Architecture.md` ADR-008) — a single-source dependency and its syndication/noise characteristics matter more, not less, under this design. This is the direct cost of the risk-reduction traded for in ADR-008 and is accepted deliberately (§7).
 
@@ -242,6 +246,28 @@ The public README should acknowledge: the corpus is GDELT-sourced and curated, n
 
 ---
 
-## 10. Source notes
+## 10. Implementation-phase risks (discovered during Stage A build, not in the original register)
 
-Synthesized from the Deep Research corpus's `risk-register.md` (canonical 30-risk register) merged with `roadmap.md` §6 (which covered the same risk surface from a product/roadmap angle with materially the same items — no new risk IDs were created from it, only elaboration). R-05, R-08, and R-18 were rewritten for GDELT-primary ingestion per `05 Architecture.md` ADR-008/009; likelihood ratings for R-05 and R-18 were raised relative to the source register to reflect the single-source P0 dependency this creates, and that trade-off is recorded explicitly in §1 and §8.
+Two genuinely new risks surfaced once real implementation started, distinct from anything in §3's original 30. Both are process risks, not architecture risks — neither changes any product decision, but both are worth a future session (or future teammate) knowing about.
+
+### R-31 — Secrets pasted directly into the chat/session transcript
+
+**Category:** Operational security. **Likelihood:** high (already occurred twice). **Impact:** medium.
+
+Despite an explicitly established protocol (paste credentials directly into `.env.local`, never into the chat), the ClickHouse database password and the Trigger.dev dev secret key were both pasted in plaintext into the conversation during Task 1 setup. The values were applied to `.env.local` (correctly gitignored, never committed) and never echoed back or logged, but the chat transcript itself may be retained by the session/platform, so both values should be treated as exposed.
+
+**Mitigation:** rotate both credentials once Stage A is stable and before any public sharing of this project (ClickHouse: Settings → Reset password; Trigger.dev: API Keys → revoke and regenerate the dev secret key). Going forward, continue reinforcing the file-paste pattern for any new credential (the `ANTHROPIC_API_KEY` request that follows this pattern correctly should be the template).
+
+### R-32 — Blind "latest" dependency pinning breaks against bleeding-edge ecosystem releases
+
+**Category:** Technical/tooling. **Likelihood:** medium (already occurred twice in one scaffold session). **Impact:** low (caught immediately by the typecheck/lint/build gate, cost under 15 minutes each time).
+
+`npm view <pkg> version` for `typescript` and `eslint` both resolved to a just-released new major (TypeScript 7's native-compiler rewrite; ESLint 10) that broke against `eslint-config-next`'s current compatibility layer and other tooling in the stack. Both were fixed by deliberately pinning to the latest **stable prior** major (TypeScript 5.9.3, ESLint 9.x) instead of blindly taking whatever `latest` resolves to.
+
+**Mitigation:** for any new dependency added in a future session, check whether it's a foundational tooling package (compiler, linter, bundler) that other pinned packages (`eslint-config-next`, `@trigger.dev/*`) need to interoperate with — if so, prefer the newest version those other packages were clearly built against, not simply the newest version that exists on the registry. Run typecheck/lint/build immediately after any new install to catch this class of break early, as was done here.
+
+---
+
+## 11. Source notes
+
+Synthesized from the Deep Research corpus's `risk-register.md` (canonical 30-risk register) merged with `roadmap.md` §6 (which covered the same risk surface from a product/roadmap angle with materially the same items — no new risk IDs were created from it, only elaboration). R-05, R-08, and R-18 were rewritten for GDELT-primary ingestion per `05 Architecture.md` ADR-008/009; likelihood ratings for R-05 and R-18 were raised relative to the source register to reflect the single-source P0 dependency this creates, and that trade-off is recorded explicitly in §1 and §8. R-31 and R-32 added during Stage A implementation (see `docs/14 Engineering Handoff.md` for current build status).

@@ -14,7 +14,7 @@
 **Status: 🟡 implemented at `trigger/chat.ts`, not yet run live.** `chatId` keying comes from `useChat({ id: chatId })` in `app/components/chat.tsx` (`${profileId}-chat`), not a separate idempotency key yet. Artifact persistence (writing to the `artifacts` table) is not implemented — that lands with Task 5, once the `articles`/`artifacts` tables exist (Task 3). Blocked on `ANTHROPIC_API_KEY` for the first live run — see `docs/14 Engineering Handoff.md`.
 
 ### WF-B — `seed-gdelt`
-**Status: ⬜ not started** (Task 4).
+**Status: 🟡 implemented at `trigger/seed-gdelt.ts`, blocked on a local live-run environment (not a code defect) — see `docs/14 Engineering Handoff.md` §7.**
 **Type:** manually triggered/replayable, run once before the demo (and again any time the seed needs refreshing). **Responsibilities:** run **3–5 distinct GDELT DOC 2.0 API queries** on deliberately different topics (not one narrow query — a single-topic seed can't demonstrate personalization differentiation, see `12 Scope Gate.md` §7.2); derive a lightweight keyword tag list per article from its title (do not attempt to parse GDELT's GKG feed — it's a dense, undocumented-to-us format and the DOC 2.0 API's simpler JSON is sufficient, see `12 Scope Gate.md` §7.1); compute `h3_r5` from `sourcecountry`; batch-insert into `articles`. **Idempotency:** no-op if `articles` already has rows — a one-time seed load doesn't need per-row fingerprint deduplication (`12 Scope Gate.md` §7.3); re-seeding from scratch is a manual truncate.
 
 That's the complete Trigger.dev surface for this build. Everything else in the original workflow catalogue (`schedule-gdelt`, `fetch-rss`, `normalize-locations` as a separate stage, `embed-chunks`, `score-relevance` as a separate async stage, `build-entity-edges`, `reconcile-pipeline`) is cut — its responsibilities are either folded into WF-B (location/H3 computation happens inline during normalization) or into the WF-A tool itself (relevance scoring happens synchronously, at query time, not as a separate precomputed stage).
@@ -64,7 +64,7 @@ Reordered per the pre-implementation design review (`12 Scope Gate.md` §7.6) �
 
 1. ✅ `mirror-agent` skeleton with a fixture manifest (Task 2) — code complete, live model-call test pending (`ANTHROPIC_API_KEY`).
 2. ✅ `articles`, `profile_cards`, `artifacts` tables, including the H3 known-coordinate sanity check (Task 3) — passed live.
-3. `seed-gdelt` task across 3–5 topically diverse queries; run it once; do the manual keyword-diversity check before writing any further code (Task 4).
+3. 🟡 `seed-gdelt` task across 4 topically diverse queries (Task 4) — code complete, live run pending (blocked on this session's sandbox networking, see `docs/14 Engineering Handoff.md` §7). The manual keyword-diversity check still needs to happen once a live run produces data.
 4. `profile_cards` seed rows for Profile A (via paste-extraction) and Profile B (pre-seeded fixture).
 5. `getBriefing` tool wired to real queries, replacing the fixture (Task 5).
 6. Impact Radar, Timeline, Map renderers + Evidence Drawer — the drawer renders from the stored title/domain/date, with the outbound article URL as a secondary link, so one dead external link during the demo can't break the "every claim has evidence" requirement (`12 Scope Gate.md` §7.4).

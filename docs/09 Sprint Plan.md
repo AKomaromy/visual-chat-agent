@@ -64,6 +64,8 @@ These are the highest-leverage, most sequence-dependent tasks — do them in thi
 
 **Judging contribution:** proves "Trigger.dev orchestrates a durable ingestion workflow" (25%), delivers the resilient seed data the demo depends on (Presentation), and the manual diversity check directly protects the single most important 40 seconds of the demo — the two-profile comparison that carries the entire Innovation score (20%).
 
+**Status: 🟡 Code complete, blocked on a local live-run environment, not a code defect.** `trigger/seed-gdelt.ts` is written, typechecks/lints/builds clean, and its GDELT DOC 2.0 API contract was verified directly (live `curl`/`node fetch` calls from this session confirmed the response shape, field names, and `sourcecountry`/`seendate` formats used by the parser). It cannot currently be run end-to-end **in this development sandbox**: the local `trigger.dev dev` worker runs as a background process, and this sandbox's background processes can reach ClickHouse Cloud (already-established) but time out connecting to new third-party hosts like `api.gdeltproject.org` — confirmed with a plain `node -e fetch(...)` reproduction outside of Trigger.dev entirely, so this is an environment/sandbox networking constraint, not a bug in the task. See `docs/14 Engineering Handoff.md` §7 for full detail and the exact unblock options. GDELT itself, ClickHouse, and Trigger.dev are otherwise unaffected — this is expected to work normally on a developer machine without this sandbox's background-process network restriction, or once deployed to Trigger.dev Cloud (whose workers have normal internet access).
+
 ---
 
 ### Task 5 — Replace the fixture with the real, ClickHouse-backed answer
@@ -91,7 +93,7 @@ Six sessions, front-loaded on Stage A. Each session ends with something that run
 
 **Total: ~17.5–18.5h**, inside the 15–20h budget with a small buffer. If actual free time comes in lower, cut inside Session 5 first (pre-seed *both* profiles instead of live-pasting Profile A) before touching anything in Sessions 1–4 — those five tasks are the required story itself.
 
-**Status:** Session 1 in progress — Task 1 passed live; Task 2 code complete, pending the live model-call test (one credential away, `ANTHROPIC_API_KEY`). Task 3 passed live. Task 4–5 and Sessions 2–6 not started. Full detail: `docs/14 Engineering Handoff.md`.
+**Status:** Session 1–2 in progress — Task 1 passed live; Task 2 code complete, pending the live model-call test (one credential away, `ANTHROPIC_API_KEY`). Task 3 passed live. Task 4 code complete, pending a live run outside this session's sandbox (see Task 4's status note above and `docs/14 Engineering Handoff.md` §7). Task 5 and Sessions 3–6 not started. Full detail: `docs/14 Engineering Handoff.md`.
 
 Stage B (if any hours remain after Session 6): attempt the ranked stretch list in `12 Scope Gate.md` §5, in order, stopping the moment the remaining time runs out. Never start a Stage B item that can't be finished and rolled back cleanly if it destabilizes the working Stage A deployment.
 

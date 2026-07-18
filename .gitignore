@@ -78,6 +78,12 @@ web_modules/
 .next
 out
 
+# Trigger.dev local dev artifacts
+.trigger
+
+# macOS
+.DS_Store
+
 # Nuxt.js build / generate output
 .nuxt
 dist

@@ -147,6 +147,8 @@ Sentry, Trigger.dev logs, or ClickHouse telemetry may store private profile cont
 **Category:** External dependency. **Score at risk:** Problem Fit, Presentation.
 The factual-abstract, embedding, or final-composition call may be unavailable. **Prevention:** batch and cache; separate raw ingestion from enrichment; keep provider interfaces swappable; pre-enrich the demo seed; configure one evaluated fallback only if time permits. **Contingency:** use deterministic visual composition from existing analytical facts; use lexical/entity retrieval when embeddings fail; pause enrichment schedules; record against seeded enriched data.
 
+**Occurred, 2026-07-19 (more severe than the risk anticipated):** the Anthropic organization behind this project's `ANTHROPIC_API_KEY` was disabled at the account level (`"This organization has been disabled."`), confirmed live via a direct test call, unrelated to rate limits or a transient outage — an account/billing/compliance-review state, appealed but with no known resolution time. This is a harder failure than "outage or rate limit" contemplated: not retryable, not time-bounded. **Resolution exercised:** swapped `mirror-agent`'s model provider from `@ai-sdk/anthropic` to `@ai-sdk/openai` (`trigger/chat.ts`, `gpt-4o`) — validating the "keep provider interfaces swappable" prevention measure above; the AI SDK's provider abstraction made this a genuinely small, contained change (two files, no product/behavior change). `docs/14 Engineering Handoff.md` §5/§7 has the current provider and credential status.
+
 ### R-23 — Small ClickHouse inserts create excessive parts
 **Category:** Data operations. **Score at risk:** Technical Implementation, Scalability.
 Many tasks may insert single rows, increasing parts and merge pressure. **Prevention:** batch within tasks; fan-in related facts; asynchronous inserts only with measured settings; monitor rows per insert and part count. **Contingency:** reduce task concurrency; increase the batch window; route writes through a bounded batching task.
@@ -252,11 +254,13 @@ Two genuinely new risks surfaced once real implementation started, distinct from
 
 ### R-31 — Secrets pasted directly into the chat/session transcript
 
-**Category:** Operational security. **Likelihood:** high (already occurred twice). **Impact:** medium.
+**Category:** Operational security. **Likelihood:** high (already occurred three times). **Impact:** medium.
 
 Despite an explicitly established protocol (paste credentials directly into `.env.local`, never into the chat), the ClickHouse database password and the Trigger.dev dev secret key were both pasted in plaintext into the conversation during Task 1 setup. The values were applied to `.env.local` (correctly gitignored, never committed) and never echoed back or logged, but the chat transcript itself may be retained by the session/platform, so both values should be treated as exposed.
 
-**Mitigation:** rotate both credentials once Stage A is stable and before any public sharing of this project (ClickHouse: Settings → Reset password; Trigger.dev: API Keys → revoke and regenerate the dev secret key). Going forward, continue reinforcing the file-paste pattern for any new credential (the `ANTHROPIC_API_KEY` request that follows this pattern correctly should be the template).
+**Recurred, 2026-07-19:** a live `ANTHROPIC_API_KEY` was pasted directly into chat (along with a `curl` command containing it), unprompted, despite the handoff doc explicitly citing this exact credential as "the template" for doing it correctly the first time. It was moved to `.env.local` immediately and never echoed back, but per this risk's own standing rule, must be treated as exposed. In this specific case the key turned out to be non-functional anyway (its Anthropic organization was disabled — R-22), so the practical exposure window was short and the project has since moved off that key entirely (provider swapped to OpenAI). Still counts as a recurrence of the underlying behavior, not a new/different risk.
+
+**Mitigation:** rotate/regenerate any credential pasted into chat once it's no longer needed or before any public sharing of this project (ClickHouse: Settings → Reset password; Trigger.dev: API Keys → revoke and regenerate the dev secret key; the exposed Anthropic key is already moot since its org is disabled, but should not be reused if the appeal succeeds — generate a fresh one instead). Going forward: when asking a user for any new credential, state the file-paste pattern explicitly in the same message as the ask, not just rely on it being established convention from earlier in the project — three occurrences across one build suggests convention alone isn't sufficient reinforcement.
 
 ### R-32 — Blind "latest" dependency pinning breaks against bleeding-edge ecosystem releases
 

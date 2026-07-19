@@ -1,6 +1,6 @@
 import { chat } from "@trigger.dev/sdk/ai";
 import { streamText, stepCountIs, tool } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { visualResponseManifestSchema, type VisualResponseManifest } from "../lib/visual-response";
@@ -141,7 +141,11 @@ export const mirrorAgent = chat.agent({
   run: async ({ messages, tools, signal }) => {
     return streamText({
       ...chat.toStreamTextOptions({ tools }),
-      model: anthropic("claude-sonnet-4-5"),
+      // Provider swapped from Anthropic to OpenAI (Anthropic org disabled,
+      // pending appeal - docs/14 Engineering Handoff.md §5/§7). Reads
+      // OPENAI_API_KEY from the environment automatically, same convention
+      // as the anthropic() provider did for ANTHROPIC_API_KEY.
+      model: openai("gpt-4o"),
       messages,
       abortSignal: signal,
       stopWhen: stepCountIs(3),

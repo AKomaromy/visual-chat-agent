@@ -266,8 +266,24 @@ Despite an explicitly established protocol (paste credentials directly into `.en
 
 **Mitigation:** for any new dependency added in a future session, check whether it's a foundational tooling package (compiler, linter, bundler) that other pinned packages (`eslint-config-next`, `@trigger.dev/*`) need to interoperate with — if so, prefer the newest version those other packages were clearly built against, not simply the newest version that exists on the registry. Run typecheck/lint/build immediately after any new install to catch this class of break early, as was done here.
 
+### R-33 — Local sandbox background processes cannot reach new third-party hosts
+
+**Category:** Development-environment/tooling. **Likelihood:** certain, inside this specific sandboxed session type. **Impact:** low once identified (unblocked by deploying to Trigger.dev Cloud instead of relying on the local `trigger.dev dev` worker for live verification).
+
+Discovered while attempting Task 4's first live run: the local `trigger.dev dev` worker (a required background process) reliably timed out connecting to `api.gdeltproject.org`, while the identical request from a foreground command succeeded instantly and a background `node fetch` to the same host reproduced the same timeout with no Trigger.dev involvement at all. ClickHouse Cloud was unaffected (an already-established host). Full root cause in `docs/14 Engineering Handoff.md` §7.
+
+**Mitigation:** for local-sandbox development sessions, verify Trigger.dev tasks that call new third-party hosts (GDELT, Anthropic, etc.) by deploying to Trigger.dev Cloud rather than relying on the local `trigger.dev dev` worker — Cloud workers run on Trigger.dev's own infrastructure with normal internet access. This is not a product or architecture risk; it does not apply to a normal developer machine or to the deployed product.
+
+### R-34 — Trigger.dev's public REST management API rejects short-lived CLI user-actor tokens
+
+**Category:** Development-environment/tooling. **Likelihood:** confirmed once. **Impact:** low (a documented, reliable fallback exists — the dashboard).
+
+Attempted to script `envvars.upload()` (the SDK's env-var-sync management call) using a `tr_uat_...` token minted from the already-authenticated CLI session (`trigger.dev mint-token`), to push ClickHouse credentials to the deployed Cloud environment without a manual dashboard step. The call failed with `401 Invalid or Missing API key` against both the `staging` and `prod` environments — the CLI's own `env list`/`env pull` read commands work through a different, internal authenticated channel than the public SDK's REST client, which appears to require a personal access token or an environment-scoped secret key, not a short-lived user-actor token.
+
+**Mitigation:** environment variables for Trigger.dev Cloud environments must be added through the dashboard (Project → Environment Variables → New environment variable → mark Secret) until a project-scoped write credential is deliberately provisioned for this purpose. This is a one-time, per-environment manual step, not a recurring one — see `docs/14 Engineering Handoff.md` §7 for the exact variables needed.
+
 ---
 
 ## 11. Source notes
 
-Synthesized from the Deep Research corpus's `risk-register.md` (canonical 30-risk register) merged with `roadmap.md` §6 (which covered the same risk surface from a product/roadmap angle with materially the same items — no new risk IDs were created from it, only elaboration). R-05, R-08, and R-18 were rewritten for GDELT-primary ingestion per `05 Architecture.md` ADR-008/009; likelihood ratings for R-05 and R-18 were raised relative to the source register to reflect the single-source P0 dependency this creates, and that trade-off is recorded explicitly in §1 and §8. R-31 and R-32 added during Stage A implementation (see `docs/14 Engineering Handoff.md` for current build status).
+Synthesized from the Deep Research corpus's `risk-register.md` (canonical 30-risk register) merged with `roadmap.md` §6 (which covered the same risk surface from a product/roadmap angle with materially the same items — no new risk IDs were created from it, only elaboration). R-05, R-08, and R-18 were rewritten for GDELT-primary ingestion per `05 Architecture.md` ADR-008/009; likelihood ratings for R-05 and R-18 were raised relative to the source register to reflect the single-source P0 dependency this creates, and that trade-off is recorded explicitly in §1 and §8. R-31 and R-32 added during Stage A implementation; R-33 and R-34 added during the Trigger.dev Cloud deployment session (see `docs/14 Engineering Handoff.md` for current build status).

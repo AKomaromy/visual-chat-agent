@@ -7,7 +7,7 @@
 
 ## 1. Current implementation status
 
-**Stage A, Session 1–2, in progress.** Task 1 and Task 3 are fully verified live. Task 2 and Task 4's code are both complete and pass all static checks but are each blocked on something outside the code itself — Task 2 on a missing credential, Task 4 on this session's sandbox networking (§7 below). Task 5 (real ClickHouse-backed tool) and the Session 3–6 work (renderers, personalization, deploy, demo) have not started.
+**Stage A, Session 1–2, in progress.** Task 1 and Task 3 are fully verified live. Task 2 and Task 4's code are both complete, statically clean, and now **deployed to Trigger.dev Cloud** (`prod` environment, version `20260719.1`, 4 tasks) — this deployment happened specifically to route around a local-sandbox networking limitation that blocked verifying either task through the local `trigger.dev dev` worker (`docs/11 Risks.md` R-33). Both still need one manual dashboard step before their live verification can run — see §7. Task 5 (real ClickHouse-backed tool) and the Session 3–6 work (renderers, personalization, demo) have not started.
 
 Task numbering below refers to `docs/09 Sprint Plan.md` §2 (the reordered five-task sequence) and `docs/08 MVP.md` §1 (the Stage A definition).
 
@@ -23,7 +23,9 @@ Task numbering below refers to `docs/09 Sprint Plan.md` §2 (the reordered five-
 | `5b3edeb` | Marked Task 1 passed in `docs/09 Sprint Plan.md` after the live acceptance test succeeded (see §3 below). |
 | `234461f` | Added Task 2: `lib/visual-response.ts` (MVRP manifest schema), `trigger/chat.ts` (`mirror-agent` chat.agent() with a fixture `getBriefing` tool), `app/actions.ts` (server actions), `app/components/chat.tsx` + `app/page.tsx` (frontend). |
 | `e5a45e4` | Updated `docs/09 Sprint Plan.md`, `docs/10 Task Backlog.md`, `docs/11 Risks.md` with current status; added this handoff document. |
-| *(see `git log` for the hash of the commit that added this file update)* | Added Task 3: `trigger/init-schema.ts` (creates `articles`/`profile_cards`/`artifacts`, runs the round-trip + H3 sanity acceptance checks, cleans up its own test rows). Verified live — see §3. Updated `docs/09`/`10` status. |
+| `f5ebace` | Added Task 3: `trigger/init-schema.ts` (creates `articles`/`profile_cards`/`artifacts`, runs the round-trip + H3 sanity acceptance checks, cleans up its own test rows). Verified live — see §3. Updated `docs/09`/`10` status. |
+| `5c4b287` | Added Task 4: `trigger/seed-gdelt.ts` (GDELT DOC 2.0 ingestion, keyword tagging, country lookup). Static checks clean; live run blocked in this session's local sandbox (root-caused, not a code defect). Updated `docs/09`/`10`/`14` status. |
+| *(see `git log` for the hash of the commit that added this file update)* | Deployed the project to Trigger.dev Cloud (`prod`, version `20260719.1`, 4 tasks) to route around the local-sandbox networking limit. Attempted an automated ClickHouse-credential sync to the Cloud environment via the SDK management API; it failed with a 401 (`docs/11 Risks.md` R-34). Added R-33/R-34 to `docs/11 Risks.md`. Updated `docs/09`/`10`/`14` status. |
 
 Full history: `git log --oneline`.
 
@@ -43,9 +45,9 @@ Output: { "confirmed": true, "id": "<uuid>", "insertedAt": "2026-07-18T18:58:27.
 
 This is a genuine round trip: scratch table created, row inserted, row read back, `confirmed: true`. Not a fixture.
 
-### Task 2 — `chat.agent()` fixture — 🟡 code complete, NOT yet run live
+### Task 2 — `chat.agent()` fixture — 🟡 code complete, deployed, NOT yet run live
 
-`npm run typecheck`, `npm run lint`, `npm run build` all pass clean as of this handoff. The actual `chat.agent()` run (which calls a real Anthropic model to decide to invoke the `getBriefing` tool) has never been executed — `ANTHROPIC_API_KEY` isn't set yet. Do not report Task 2 as passed until it has actually streamed a real response.
+`npm run typecheck`, `npm run lint`, `npm run build` all pass clean as of this handoff, and `mirror-agent` is live on Trigger.dev Cloud (`prod`, version `20260719.1`). The actual `chat.agent()` run (which calls a real Anthropic model to decide to invoke the `getBriefing` tool) has never been executed — `ANTHROPIC_API_KEY` isn't set anywhere yet, not in `.env.local` and not in the Cloud `prod` environment. Do not report Task 2 as passed until it has actually streamed a real response.
 
 ### Task 3 — ClickHouse schema — ✅ PASSED LIVE
 
@@ -79,9 +81,22 @@ geoToH3(40.7128, -74.0060, 5)  -- (lat, lon, res) — swapped, silently wrong
 
 Verified after the run: `SELECT count() FROM articles` (and `profile_cards`, `artifacts`) all return `0` — the task's own test rows were deleted, so Task 4's "no-op if `articles` already has rows" check is still accurate.
 
-### Task 4 — `seed-gdelt` ingestion — 🟡 code complete, NOT yet run live (blocked, see §7)
+### Deployment — Trigger.dev Cloud (`prod`) — ✅ DEPLOYED LIVE
 
-`npm run typecheck`, `npm run lint`, `npm run build` all pass clean. The GDELT DOC 2.0 API contract used by the parser (`{"articles": [{url, title, seendate, domain, language, sourcecountry}]}`, `seendate` as `YYYYMMDDTHHMMSSZ`, `sourcecountry` as a full country name not an ISO code) was verified live via direct `curl`/`node fetch` calls from this session — real, current (2026-07-18) articles came back correctly. The task itself has never completed a live run end-to-end: every attempt to trigger it through the local `trigger.dev dev` worker fails with a TCP connect timeout to `api.gdeltproject.org`, root-caused to a sandbox networking constraint, not a code defect — full detail in §7. Do not report Task 4 as passed until it has actually inserted real rows and the manual diversity check (`docs/12 Scope Gate.md` §7.2) has been run against them.
+```
+npx trigger.dev@latest deploy --dry-run --env prod   # succeeded, build clean
+npx trigger.dev@latest deploy --env prod             # succeeded
+```
+Result: `Version 20260719.1 deployed with 4 detected tasks` (`connectivity-check`, `init-schema`, `seed-gdelt`, `mirror-agent`).
+Dashboard: `https://cloud.trigger.dev/projects/v3/proj_nlisinjujntnqjrchglx/deployments/shwljpqv`
+
+**Why `prod` and not `staging`:** `npx trigger.dev@latest env list --env staging` returned `Environment not found` for this project — `staging` isn't provisioned here (plan-gated or needs separate creation, not investigated further since it wasn't necessary). `env list --env prod` succeeded and showed the project's 12 default/system Trigger.dev variables (all telemetry-related), confirming `prod` is the only environment that currently exists to deploy to. This is a discovered technical constraint, not a scope decision — there was no real choice between environments.
+
+**Env-var sync attempted and failed — do not repeat without new information:** tried to script `envvars.upload()` (SDK management API) to push `CLICKHOUSE_*` from `.env.local` into the Cloud `prod` environment, using a short-lived `tr_uat_...` token minted from the already-authenticated CLI session (`trigger.dev mint-token`). Failed both times (once targeting `staging`, once `prod`) with `401 Invalid or Missing API key`. The CLI's own `env list`/`env pull` read commands clearly use a different, internal authenticated channel than the public SDK's REST client — the REST client appears to need a personal access token or an environment-scoped secret key, neither of which this session has. Recorded as `docs/11 Risks.md` R-34. **Do not spend more time trying to script around this** — the dashboard is the documented, reliable path (§7).
+
+### Task 4 — `seed-gdelt` ingestion — 🟡 code complete, deployed, NOT yet run live (blocked, see §7)
+
+`npm run typecheck`, `npm run lint`, `npm run build` all pass clean. The GDELT DOC 2.0 API contract used by the parser (`{"articles": [{url, title, seendate, domain, language, sourcecountry}]}`, `seendate` as `YYYYMMDDTHHMMSSZ`, `sourcecountry` as a full country name not an ISO code) was verified live via direct `curl`/`node fetch` calls from this session — real, current (2026-07-18) articles came back correctly. Every attempt to trigger the task through the local `trigger.dev dev` worker failed with a TCP connect timeout to `api.gdeltproject.org`, root-caused to this session's sandbox networking (`docs/11 Risks.md` R-33), not a code defect. `seed-gdelt` is now deployed to Trigger.dev Cloud (`prod`) instead, which has normal internet access — but it still hasn't completed a live run there, because the `prod` environment has no `CLICKHOUSE_*` variables yet (§7). Do not report Task 4 as passed until it has actually inserted real rows and the manual diversity check (`docs/12 Scope Gate.md` §7.2) has been run against them.
 
 ---
 
@@ -112,7 +127,7 @@ Verified after the run: `SELECT count() FROM articles` (and `profile_cards`, `ar
 
 **ClickHouse Cloud:** service `visual-chat-agent`, Mini tier, 1 replica, 12 GiB, region `ca-central-1` (AWS), status running. Contains four tables: `_scratch_connectivity_check` (Task 1's diagnostic — not product schema, still unremoved) and the three product tables `articles`, `profile_cards`, `artifacts` (Task 3, created, empty — 0 rows in all three as of this handoff). `articles.h3_r5` is a `MATERIALIZED` column computed server-side via `geoToH3(longitude, latitude, 5)`; `profile_cards.item_type` is an `Enum8('goal'=1,'interest'=2,'entity'=3,'location'=4)`.
 
-**Trigger.dev:** project `visual-chat-agent` (`proj_nlisinjujntnqjrchglx`), org "Attentionic Inc." CLI is logged in and the login persists locally (no need to re-auth unless working from a different machine/environment). `chat.agent()` `mirror-agent` and tasks `connectivity-check`/`init-schema` are all defined in `trigger/` and discoverable by `trigger.dev dev`. `init-schema` has been invoked live and passed (§3); `mirror-agent` has never actually been invoked.
+**Trigger.dev:** project `visual-chat-agent` (`proj_nlisinjujntnqjrchglx`), org "Attentionic Inc." CLI is logged in and the login persists locally (no need to re-auth unless working from a different machine/environment). All 4 tasks (`connectivity-check`, `init-schema`, `seed-gdelt`, `mirror-agent`) are deployed live to the `prod` environment as version `20260719.1` — see the Deployment record in §3. `init-schema` has been invoked live and passed; `seed-gdelt` and `mirror-agent` have not yet been invoked live (both need one env var each in `prod` first — §7). The `staging` environment does not exist for this project (confirmed live, §3) — `prod` is the only deploy target available.
 
 **Frontend:** `app/page.tsx` renders `Chat` (`app/components/chat.tsx`) — a profile switcher (Profile A / Profile B, no auth), a button that sends the exact Demo Contract question, and a raw-JSON display of whatever the `getBriefing` tool returns. There are no Impact Radar / Timeline / Map visual components yet — that's a later task (after Task 5).
 
@@ -120,13 +135,17 @@ Verified after the run: `SELECT count() FROM articles` (and `profile_cards`, `ar
 
 ## 5. Remaining external credentials required
 
-| Credential | Status | Where to get it |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | ❌ **missing** — this is the only remaining credential blocker | console.anthropic.com → API Keys. Paste directly into `.env.local` yourself, not into chat (see `docs/11 Risks.md` R-31 for why this matters). |
+Two separate places need credentials now: **local `.env.local`** (for local dev / this session's own scripts) and **the Trigger.dev Cloud `prod` environment's dashboard** (for the deployed tasks — a completely separate store, not synced from `.env.local` automatically). See §7 for the exact dashboard steps.
 
-Everything else (ClickHouse credentials, Trigger.dev project ref, Trigger.dev dev secret key) is already obtained and in place — see §6. Task 4's blocker (§7) is an environment/networking constraint, not a missing credential — no credential unblocks it.
+| Credential | Status locally (`.env.local`) | Status on Trigger.dev Cloud (`prod`) | Where to get it |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | ❌ missing (`REPLACE_ME`) | ❌ not set | console.anthropic.com → API Keys. |
+| `CLICKHOUSE_URL` / `CLICKHOUSE_USERNAME` / `CLICKHOUSE_PASSWORD` | ✅ set | ❌ not set | Already have these locally — just need to be copied into the Trigger.dev dashboard too. |
+| `CLICKHOUSE_DATABASE` | not set (defaults to `"default"`) | not set | Optional either place. |
 
-If OpenAI is preferred instead of Anthropic: swap `@ai-sdk/anthropic`'s `anthropic("claude-sonnet-4-5")` for `@ai-sdk/openai`'s `openai("gpt-...")` in `trigger/chat.ts` (two-line change, package not yet installed) and use `OPENAI_API_KEY` instead.
+**Do not paste any of these into chat, and do not ask the user to.** Local values go in `.env.local` (the established pattern in this project — see `docs/11 Risks.md` R-31). Cloud values go directly into the Trigger.dev dashboard's Environment Variables page (§7) — never through this conversation, and an automated script-based path was tried and failed (`docs/11 Risks.md` R-34).
+
+If OpenAI is preferred instead of Anthropic: swap `@ai-sdk/anthropic`'s `anthropic("claude-sonnet-4-5")` for `@ai-sdk/openai`'s `openai("gpt-...")` in `trigger/chat.ts` (two-line change, package not yet installed) and use `OPENAI_API_KEY` instead — in both places.
 
 ---
 
@@ -138,34 +157,33 @@ If OpenAI is preferred instead of Anthropic: swap `@ai-sdk/anthropic`'s `anthrop
 | `CLICKHOUSE_USERNAME` | ✅ set | `default` |
 | `CLICKHOUSE_PASSWORD` | ✅ set | ⚠️ was pasted in chat once — treat as exposed, rotate before any public sharing (`docs/11 Risks.md` R-31) |
 | `CLICKHOUSE_DATABASE` | not set | optional, defaults to `"default"` in `lib/env.ts` |
-| `TRIGGER_SECRET_KEY` | ✅ set | ⚠️ was also pasted in chat once — same rotation note applies |
-| `ANTHROPIC_API_KEY` | ❌ placeholder (`REPLACE_ME`) | **the current blocker** — see §5 |
+| `TRIGGER_SECRET_KEY` | ✅ set | ⚠️ was also pasted in chat once — same rotation note applies. This is a **dev-environment-scoped** secret key — it cannot trigger or manage the `prod` environment's runs (a separate, `prod`-scoped secret key would be needed for that, and none is currently held anywhere in this project). |
+| `ANTHROPIC_API_KEY` | ❌ placeholder (`REPLACE_ME`) | **a current blocker** — see §5/§7 |
 
-`.env.local` is correctly gitignored (`.gitignore` has `.env.*`). Confirmed: no credential has ever been committed. `.env.example` at the repo root documents the same variables without values.
+`.env.local` is correctly gitignored (`.gitignore` has `.env.*`). Confirmed: no credential has ever been committed. `.env.example` at the repo root documents the same variables without values. **None of these are synced to Trigger.dev Cloud automatically** — Cloud environment variables are a separate store (§5/§7).
 
 ---
 
 ## 7. Outstanding blockers
 
-1. **`ANTHROPIC_API_KEY` not set** (still `REPLACE_ME` as of this handoff) — blocks the live model-call half of Task 2 verification. See item 2 below: even once set, the live run may hit the same sandbox constraint as Task 4.
+The local-sandbox networking limitation that originally blocked Task 4 (R-33 — local background processes time out connecting to new third-party hosts like `api.gdeltproject.org`, root-caused with a minimal repro outside Trigger.dev entirely) is **resolved for verification purposes**: the project is now deployed to Trigger.dev Cloud (`prod`, version `20260719.1`, §3), whose workers run on Trigger.dev's own infrastructure with normal internet access. What remains are environment-variable and credential gaps in that Cloud environment — three concrete manual actions, none of which can be done by pasting anything into this chat:
 
-2. **This development sandbox's background processes cannot reach new third-party hosts — discovered while attempting Task 4's live run.** `npx trigger.dev@latest dev` must run as a long-lived background process (that's how Trigger.dev's local dev mode works — there's no foreground-only alternative). Every attempt to trigger `seed-gdelt` through that background worker failed with:
-   ```
-   ConnectTimeoutError: Connect Timeout Error (attempted address: api.gdeltproject.org:443, timeout: 10000ms)
-   ```
-   This was root-caused, not just observed once:
-   - A `curl`/`node fetch` call to the exact same GDELT URL, run as a **foreground** command, succeeds immediately (confirmed the API contract used in `trigger/seed-gdelt.ts` — see §3).
-   - A plain `node -e` script with no Trigger.dev involvement at all, run as a **background** command, reproduces the identical `ConnectTimeoutError` to the identical host. This isolates the cause to *this session's background-process networking*, not to Trigger.dev, not to GDELT, and not to the seed task's code.
-   - By contrast, the same background `trigger.dev dev` worker successfully reached ClickHouse Cloud for both Task 1 and Task 3 — so this isn't "background processes have no network," it's specifically new/arbitrary third-party hosts from a backgrounded process.
+**1. Add `ANTHROPIC_API_KEY` to the Trigger.dev Cloud `prod` environment** (blocks Task 2):
+   - Get a key from console.anthropic.com → API Keys.
+   - Go to `https://cloud.trigger.dev/projects/v3/proj_nlisinjujntnqjrchglx` → **Environment Variables** → **New environment variable** → environment **prod** → name `ANTHROPIC_API_KEY` → mark **Secret** → paste the value directly into that dashboard field (not into `.env.local`, not into this chat — the Cloud environment is a separate store, §5).
+   - Optional but recommended: also add it to `.env.local` (`ANTHROPIC_API_KEY=...`, replacing `REPLACE_ME`) so local dev has it too — the two are independent.
 
-   **Why this matters beyond Task 4:** the same mechanism will very likely block **Task 2's live verification too**, once `ANTHROPIC_API_KEY` is set — `chat.agent()`'s model call also runs inside the same backgrounded `trigger.dev dev` worker and would be connecting to `api.anthropic.com`, a host that worker has never reached before either. Don't be surprised if Task 2's live test times out the same way; if it does, it's this same environmental constraint, not a code or credential problem.
+**2. Add the ClickHouse credentials to the same Cloud `prod` environment** (blocks Task 4):
+   - Same dashboard page, environment **prod**, add `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD` (mark each **Secret**) — copy these from `.env.local`, where they already exist.
+   - An automated push of these was attempted this session via the SDK's `envvars.upload()` management call (scripted, no chat exposure) and failed with a 401 — see `docs/11 Risks.md` R-34. The dashboard is the only path confirmed to work.
 
-   **This is specific to developing inside this particular sandboxed session — not a property of the product, Trigger.dev, or GDELT.** Three ways to unblock, in likely order of convenience:
-   - Run `npx trigger.dev@latest dev` (and the verification script) on a normal developer machine / unrestricted shell outside this sandbox — the code needs zero changes.
-   - `npx trigger.dev@latest deploy` to a Trigger.dev Cloud environment (dev or staging) — those workers run on Trigger.dev's own infrastructure with normal internet access, so both Task 2 and Task 4 could be verified there without leaving this session. This moves the "Deploy" step earlier than `docs/09 Sprint Plan.md`'s Session 6 plan, so it's worth a quick confirmation before doing it rather than assuming it's in scope for right now.
-   - Ask whoever operates the host machine this sandbox runs on whether background-process egress to arbitrary new hosts can be allowed for this session.
+**3. A way to trigger runs in `prod` for verification** — the `TRIGGER_SECRET_KEY` currently in `.env.local` is scoped to the **dev** environment only and cannot trigger or inspect `prod` runs. Two options:
+   - **Recommended:** get the `prod`-scoped secret key from the same dashboard project → **API Keys** page, add it to `.env.local` as e.g. `TRIGGER_PROD_SECRET_KEY` (same paste-not-chat pattern as every other credential here) — this lets live verification continue the same scripted way Tasks 1/3 were verified (`tasks.trigger()` / `runs.retrieve()`).
+   - **Alternative, no key needed:** use the dashboard's own test UI directly — `https://cloud.trigger.dev/projects/v3/proj_nlisinjujntnqjrchglx/test?environment=prod` — to manually trigger `mirror-agent` and `seed-gdelt` and read their results in the browser. Slower to iterate on, but requires nothing new from this session.
 
-No other blockers. ClickHouse and Trigger.dev are both fully provisioned, connected, and verified. The product schema now exists.
+Once all three are in place, live verification of Task 2 and Task 4 can proceed exactly as described in `docs/09 Sprint Plan.md`'s acceptance criteria — see §9 below for the precise steps.
+
+No other blockers. ClickHouse and Trigger.dev are both fully provisioned, connected, and verified. The product schema exists. The code for both Task 2 and Task 4 is finished and deployed — everything left is credentials and dashboard configuration, not implementation.
 
 ---
 
@@ -178,36 +196,34 @@ No other blockers. ClickHouse and Trigger.dev are both fully provisioned, connec
 - **`.trigger/` local build-cache directory** exists at the repo root from running `trigger.dev dev` locally. Gitignored, harmless, safe to delete if it grows large.
 - **No artifact persistence yet** — the `getBriefing` tool's fixture output is not written to any table. This is expected; the `artifacts` table now exists (Task 3), but the real tool write lands with Task 5, not before.
 - **`seed-gdelt`'s GDELT query set has not been empirically tuned.** The 4 queries in `trigger/seed-gdelt.ts` (`ai-regulation`, `climate-energy`, `markets`, `geopolitics`) and the `TAG_KEYWORDS`/`COUNTRY_LOOKUP` tables are a reasoned first pass, not yet validated against real result counts or the Demo Contract §4 thresholds (≥150 articles, ≥30 per profile side, ≥5 countries) because the task has never completed a live run (§7). Expect to iterate on query wording or the keyword list once real output is visible.
-- **Untracked, unreferenced files sit in the repo root** (`architecture.md`, `data.md`, `implementation-guide.md`, `risk-register.md`, `tech-stack.md`, `mirror-visual-system.zip`, `mirror_strategy_bundle.zip`, `skills-lock.json`, two PDFs). These are not part of `docs/00`–`14` and are not read or referenced by any task in this plan — they appear to be earlier source/research material (note `risk-register.md` matches the "Deep Research corpus" cited in `docs/11 Risks.md`'s source notes). Left untouched and un-actioned; flag to the user before deleting or relying on them, since their provenance wasn't established in this session.
+- **`staging` Trigger.dev environment does not exist for this project** — only `dev` (local) and `prod` (Cloud) are available. If a genuine staging tier is wanted later, it needs to be provisioned/enabled from the dashboard first; not investigated further since `prod` was sufficient to unblock verification.
+- **No `prod`-scoped `TRIGGER_SECRET_KEY` held anywhere in this project yet** — only the `dev`-scoped one in `.env.local`. This blocks scripted live verification of the now-deployed `prod` tasks until one is added (§7 item 3).
+- **Untracked, unreferenced files sit in the repo root** (`architecture.md`, `data.md`, `implementation-guide.md`, `risk-register.md`, `tech-stack.md`, `mirror-visual-system.zip`, `mirror_strategy_bundle.zip`, `skills-lock.json`, two PDFs). These are not part of `docs/00`–`14` and are not read or referenced by any task in this plan — they appear to be earlier source/research material (note `risk-register.md` matches the "Deep Research corpus" cited in `docs/11 Risks.md`'s source notes). Left untouched and un-actioned per explicit instruction this session; still flag before deleting or relying on them, since their provenance wasn't established.
 
 ---
 
 ## 9. Exact next backlog item
 
-Task 2's and Task 4's code are both **done**; both are waiting on the same class of problem (§7) rather than on more code. There is no more code-only work available in Stage A until one of these unblocks — Task 5 depends on Task 4's real data, and the renderer work (Session 4) depends on Task 5.
+Task 2's and Task 4's code are both **done and deployed**. What's left is entirely the three manual dashboard/credential actions in §7 — there is no more code-only work available in Stage A until those land. Once they do:
 
-**Unblock path (pick one, then run both verifications in the same environment):**
-
-1. **Preferred — verify outside this sandbox.** On a normal developer machine (or any shell without this session's background-process networking restriction): pull the latest commit, set `ANTHROPIC_API_KEY` in `.env.local`, run `npx trigger.dev@latest dev`, and do both of the following:
-   - **Task 2:** trigger `mirror-agent` with the exact Demo Contract question ("What should I know today?") and `profileId: "profile-a"`, then again with `"profile-b"`. Confirm each run completes, `getBriefing` fires, and the output validates against `visualResponseManifestSchema`. Confirm the two manifests differ (verdict, top Impact Radar item).
-   - **Task 4:** trigger `seed-gdelt`. Confirm it completes, check the returned summary (`totalInserted`, `distinctCountries`, `perTopicFetched`) against `docs/13 Demo Contract.md` §4's thresholds (≥150 articles, ≥30 per profile side, ≥5 countries, within 14 days). Then do the manual diversity check by hand in the ClickHouse console (`docs/12 Scope Gate.md` §7.2) before writing any more code.
-   - For both, a small script using `tasks.trigger`/`runs.retrieve` is the fastest path (see `trigger/init-schema.ts`'s pattern for the shape) — write it outside the tracked tree or delete it after use, as was done for Tasks 1, 3, and the (failed) Task 4 attempt in this session.
-2. **Alternative — deploy to Trigger.dev Cloud.** `npx trigger.dev@latest deploy` to a dev/staging environment moves execution onto Trigger.dev's own infrastructure, which has normal internet access. This works from inside this sandbox too, but it's an earlier "Deploy" than `docs/09 Sprint Plan.md`'s Session 6 plan — confirm with the user first rather than doing it as a side effect of unblocking a test.
-
-Once both pass, update `docs/09 Sprint Plan.md`'s Task 2 and Task 4 status lines to ✅ (same pattern as Task 1's/Task 3's), commit, and move to **Task 5** (`docs/09 Sprint Plan.md` / `docs/10 Task Backlog.md` §2): replace `getBriefing`'s fixture body with the real ranked-signal/timeline/H3 ClickHouse queries against the seeded `articles` table.
+1. **Verify Task 2 live:** trigger `mirror-agent` (`prod`) with the exact Demo Contract question ("What should I know today?") and `profileId: "profile-a"`, then again with `"profile-b"`. Confirm each run completes, `getBriefing` fires, and the output validates against `visualResponseManifestSchema`. Confirm the two manifests differ (verdict, top Impact Radar item) — this is the fixture-data version of the Demo Contract's core claim.
+2. **Verify Task 4 live:** trigger `seed-gdelt` (`prod`). Confirm it completes, check the returned summary (`totalInserted`, `distinctCountries`, `perTopicFetched`) against `docs/13 Demo Contract.md` §4's thresholds (≥150 articles, ≥30 per profile side, ≥5 countries, within 14 days). Then do the manual diversity check by hand in the ClickHouse console (`docs/12 Scope Gate.md` §7.2) before writing any more code.
+3. If using the scripted path (§7 item 3, recommended): a small script using `tasks.trigger`/`runs.retrieve` targeting the `prod`-scoped secret key is the fastest way to do both — see `trigger/init-schema.ts`'s pattern for the shape — write it outside the tracked tree or delete it after use, as was done for every prior live verification in this project.
+4. Once both pass, update `docs/09 Sprint Plan.md`'s Task 2 and Task 4 status lines to ✅ (same pattern as Task 1's/Task 3's), commit, and move to **Task 5** (`docs/09 Sprint Plan.md` / `docs/10 Task Backlog.md` §2): replace `getBriefing`'s fixture body with the real ranked-signal/timeline/H3 ClickHouse queries against the seeded `articles` table.
 
 ---
 
 ## 10. First action the next Claude Code session should perform
 
 1. Read this document in full (done, if you're reading this).
-2. Check whether `ANTHROPIC_API_KEY` is set in `.env.local` (presence check only, never display the value). If not, ask the user for it using the same safe pattern as every prior credential in this build (paste into `.env.local`, never into chat).
-3. Ask the user which unblock path from §9 they want (verify on their own machine vs. have this session deploy to Trigger.dev Cloud) — don't guess, since deploying is a step ahead of the planned sequence and worth a quick confirmation.
-4. Do not re-run Task 1's connectivity check or Task 3's `init-schema` as a first step — both already passed live and re-running either adds nothing (though `init-schema` is safe to re-run if ever needed, since it's idempotent and self-cleaning).
-5. Do not re-attempt Task 2 or Task 4's live run inside this same kind of sandboxed session without first confirming background-process networking has actually changed — otherwise this will just reproduce the same `ConnectTimeoutError` and burn time re-discovering §7.
+2. Check whether the three items in §7 have landed: `ANTHROPIC_API_KEY` and `CLICKHOUSE_*` in the Trigger.dev Cloud `prod` environment, and either a `prod`-scoped secret key in `.env.local` or a plan to verify via the dashboard's test UI.
+   - **If all three are in place:** proceed directly to §9's live verification steps.
+   - **If not:** don't idle waiting — there is genuinely no other Stage A code work available until these land (Task 5 depends on Task 4's real data). Ask the user for whichever of the three is still missing, using the exact dashboard/`.env.local` paths in §7 — never ask for a value to be pasted into chat.
+3. Do not re-run Task 1's connectivity check or Task 3's `init-schema` as a first step — both already passed live and re-running either adds nothing (though `init-schema` is safe to re-run if ever needed, since it's idempotent and self-cleaning).
+4. Do not re-attempt Task 2 or Task 4's live run through the **local** `trigger.dev dev` worker — that path is root-caused as broken in this sandbox type (R-33) and deploying to Cloud was the fix, not a workaround to retry differently.
 
 ---
 
 ## 11. Source notes
 
-Written per an explicit handoff request at the end of a Stage A implementation session. Updated twice in a subsequent autonomous session (per `CLAUDE.md`'s standing authorization to continue implementation without re-approval): once after Task 3 (ClickHouse schema) was written and verified live, and again after Task 4 (`seed-gdelt`) was written, statically verified, and its live run investigated to a definitive root cause (§7) — the session stopped there rather than guessing further, since unblocking it is an environment/deployment decision, not an implementation one. Reflects repository state as of commit `e5a45e4` plus Task 3's `trigger/init-schema.ts`, Task 4's `trigger/seed-gdelt.ts`, and the documentation updates committed alongside this revision. Does not modify `CLAUDE.md`, `docs/13 Demo Contract.md`, `docs/12 Scope Gate.md`, `docs/08 MVP.md`, `docs/02 Product.md`, or `docs/01 Vision.md` — all five remain frozen, per instruction.
+Written per an explicit handoff request at the end of a Stage A implementation session. Updated across three subsequent sessions/turns (per `CLAUDE.md`'s standing authorization to continue implementation without re-approval, and later per an explicit approved sequencing change): after Task 3 (ClickHouse schema) was written and verified live; after Task 4 (`seed-gdelt`) was written, statically verified, and its local live-run blocker investigated to a definitive root cause; and after that blocker was resolved by deploying the project to Trigger.dev Cloud (`prod`, version `20260719.1`) — an explicitly approved earlier-than-planned deploy, done specifically to unblock Task 2/Task 4 live verification. That deployment succeeded; a follow-on attempt to also automate the Cloud environment's credential setup did not (`docs/11 Risks.md` R-34), so this revision stops at the three manual dashboard/credential actions in §7 rather than guessing further at unauthenticated API workarounds. Reflects repository state as of commit `5c4b287` plus the documentation updates committed alongside this revision. Does not modify `CLAUDE.md`, `docs/13 Demo Contract.md`, `docs/12 Scope Gate.md`, `docs/08 MVP.md`, `docs/02 Product.md`, or `docs/01 Vision.md` — all five remain frozen, per instruction.

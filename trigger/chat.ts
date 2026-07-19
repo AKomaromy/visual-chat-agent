@@ -138,6 +138,24 @@ const tools = {
 export const mirrorAgent = chat.agent({
   id: "mirror-agent",
   tools,
+  // Discovered while preparing live verification: run() only sees
+  // `messages`/`tools`/`signal` - clientData (the profileId set by the
+  // frontend's profile switcher, app/components/chat.tsx) was never
+  // threaded to the model, so it had no way to know which profile is
+  // active and therefore no way to call getBriefing correctly. Fixed by
+  // setting the system prompt from clientData in onChatStart (fires once
+  // per chat) - chat.toStreamTextOptions() in run() picks it up
+  // automatically via chat.prompt.set().
+  clientDataSchema: z.object({
+    profileId: z.enum(["profile-a", "profile-b"]),
+  }),
+  onChatStart: async ({ clientData }) => {
+    chat.prompt.set(
+      `The active profile for this conversation is "${clientData.profileId}". ` +
+        `Always call getBriefing with profileId set to exactly "${clientData.profileId}" - ` +
+        `never ask the user which profile is active, it is already fixed for this session.`,
+    );
+  },
   run: async ({ messages, tools, signal }) => {
     return streamText({
       ...chat.toStreamTextOptions({ tools }),

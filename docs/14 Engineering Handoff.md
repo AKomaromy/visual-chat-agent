@@ -7,7 +7,7 @@
 
 ## 1. Current implementation status
 
-**Stage A, Session 1–2, in progress.** Task 1 and Task 3 are fully verified live. Task 2 and Task 4's code are both complete, statically clean, and now **deployed to Trigger.dev Cloud** (`prod` environment, version `20260719.2`, 4 tasks) — this deployment happened specifically to route around a local-sandbox networking limitation that blocked verifying either task through the local `trigger.dev dev` worker (`docs/11 Risks.md` R-33). Task 2's model provider was also swapped from Anthropic to OpenAI mid-session (`docs/11 Risks.md` R-22 — the Anthropic org behind this project's key was disabled). Both tasks still need manual dashboard/credential steps before their live verification can run — see §7. Task 5 (real ClickHouse-backed tool) and the Session 3–6 work (renderers, personalization, demo) have not started.
+**Stage A, Session 1–2, in progress.** Task 1 and Task 3 are fully verified live. Task 2 and Task 4's code are both complete, deployed to Trigger.dev Cloud (`prod`, version `20260719.3`), and **all required credentials are confirmed correctly configured there** — every remaining credential/dashboard blocker from earlier in this session is resolved. Both tasks were live-tested this session and both hit a **real external blocker with nothing left to fix in code**: Task 2 on OpenAI account quota (`docs/11 Risks.md` R-22), Task 4 on a live GDELT API outage (`docs/11 Risks.md` R-05). A genuine implementation defect was also found and fixed along the way (§3, Task 2 — `clientData`/`profileId` was never wired to the model). Task 5 (real ClickHouse-backed tool) and the Session 3–6 work (renderers, personalization, demo) have not started; both remaining blockers are outside this project's code, so there is no further Stage A code work available until one of them clears.
 
 Task numbering below refers to `docs/09 Sprint Plan.md` §2 (the reordered five-task sequence) and `docs/08 MVP.md` §1 (the Stage A definition).
 
@@ -26,7 +26,10 @@ Task numbering below refers to `docs/09 Sprint Plan.md` §2 (the reordered five-
 | `f5ebace` | Added Task 3: `trigger/init-schema.ts` (creates `articles`/`profile_cards`/`artifacts`, runs the round-trip + H3 sanity acceptance checks, cleans up its own test rows). Verified live — see §3. Updated `docs/09`/`10` status. |
 | `5c4b287` | Added Task 4: `trigger/seed-gdelt.ts` (GDELT DOC 2.0 ingestion, keyword tagging, country lookup). Static checks clean; live run blocked in this session's local sandbox (root-caused, not a code defect). Updated `docs/09`/`10`/`14` status. |
 | `dc8d63c` | Deployed the project to Trigger.dev Cloud (`prod`, version `20260719.1`, 4 tasks) to route around the local-sandbox networking limit. Attempted an automated ClickHouse-credential sync to the Cloud environment via the SDK management API; it failed with a 401 (`docs/11 Risks.md` R-34). Added R-33/R-34 to `docs/11 Risks.md`. Updated `docs/09`/`10`/`14` status. |
-| *(see `git log` for the hash of the commit that added this file update)* | User provided `ANTHROPIC_API_KEY` (into chat, not `.env.local` — treated as exposed regardless of outcome, `docs/11 Risks.md` R-31). Live test revealed the Anthropic organization behind it was disabled at the account level (`docs/11 Risks.md` R-22), not a code or format problem. Swapped `mirror-agent`'s model provider from `@ai-sdk/anthropic` to `@ai-sdk/openai` (`gpt-4o`) in `trigger/chat.ts`; removed the unused `@ai-sdk/anthropic` dependency; updated `.env.example`. Redeployed to Trigger.dev Cloud (`prod`, version `20260719.2`). Updated `docs/09`/`10`/`11`/`14` status. |
+| `68dbd44` | User provided `ANTHROPIC_API_KEY` (into chat, not `.env.local` — treated as exposed regardless of outcome, `docs/11 Risks.md` R-31). Live test revealed the Anthropic organization behind it was disabled at the account level (`docs/11 Risks.md` R-22), not a code or format problem. Swapped `mirror-agent`'s model provider from `@ai-sdk/anthropic` to `@ai-sdk/openai` (`gpt-4o`) in `trigger/chat.ts`; removed the unused `@ai-sdk/anthropic` dependency; updated `.env.example`. Redeployed to Trigger.dev Cloud (`prod`, version `20260719.2`). Updated `docs/09`/`10`/`11`/`14` status. |
+| `e3f59cd` | User provided an `OPENAI_API_KEY`. Live test found `429 insufficient_quota` — an account/billing state — noted in the handoff before further work. |
+| *(User then had all three Cloud-dashboard blockers resolved via Claude Cowork — `OPENAI_API_KEY`, `CLICKHOUSE_URL`/`CLICKHOUSE_USERNAME`/`CLICKHOUSE_PASSWORD` added to the Trigger.dev `prod` environment, and a `prod`-scoped `TRIGGER_PROD_SECRET_KEY` saved to `.env.local`.)* | |
+| *(see `git log` for the hash of the commit that added this file update)* | Found and fixed a real defect before the first live chat attempt: `run()` never read `clientData`, so the model had no way to know which profile was active. Fixed via `onChatStart` + `chat.prompt.set()` in `trigger/chat.ts`. Redeployed (`prod`, version `20260719.3`). Live-verified the full session/dispatch path for `mirror-agent` (reached `WAITING` with the correct payload) — blocked only on OpenAI quota, confirmed still failing after the user's reported billing fix. Live-attempted `seed-gdelt` twice on Cloud — confirmed `CLICKHOUSE_*` credentials work, but both attempts hit a genuine `api.gdeltproject.org` outage, isolated via an independent `curl` failure at the same time. Added R-05/R-22 occurrence notes to `docs/11 Risks.md`. Updated `docs/09`/`10`/`14` status. |
 
 Full history: `git log --oneline`.
 
@@ -46,11 +49,28 @@ Output: { "confirmed": true, "id": "<uuid>", "insertedAt": "2026-07-18T18:58:27.
 
 This is a genuine round trip: scratch table created, row inserted, row read back, `confirmed: true`. Not a fixture.
 
-### Task 2 — `chat.agent()` fixture — 🟡 code complete, deployed, NOT yet run live
+### Task 2 — `chat.agent()` — 🟡 code complete, deployed, live-tested, blocked on OpenAI account quota (external)
 
-`npm run typecheck`, `npm run lint`, `npm run build` all pass clean as of this handoff, and `mirror-agent` is live on Trigger.dev Cloud (`prod`, version `20260719.2`). The actual `chat.agent()` run (which calls a real model to decide to invoke the `getBriefing` tool) has never been executed.
+**Model provider is OpenAI, not Anthropic.** A user-provided `ANTHROPIC_API_KEY` was tested live (`curl` directly against `api.anthropic.com/v1/messages`, model `claude-sonnet-5`) and rejected with `"This organization has been disabled."` — an account-level state (billing/compliance review), not a code, format, or model-ID problem. `trigger/chat.ts` was switched to `@ai-sdk/openai`'s `openai("gpt-4o")`. `ANTHROPIC_API_KEY` is no longer used anywhere in this codebase.
 
-**Model provider is now OpenAI, not Anthropic.** A user-provided `ANTHROPIC_API_KEY` was tested live (`curl` directly against `api.anthropic.com/v1/messages`, model `claude-sonnet-5`) and rejected with `"This organization has been disabled."` — an account-level state (billing/compliance review), not a code, format, or model-ID problem; confirmed via a direct API call, not inferred. The org is under appeal with no known resolution time (`docs/11 Risks.md` R-22). Rather than block on that, `trigger/chat.ts` was switched to `@ai-sdk/openai`'s `openai("gpt-4o")`. **`ANTHROPIC_API_KEY` is no longer used anywhere in this codebase** — do not re-add it without a product/infra reason; `OPENAI_API_KEY` is the credential that now matters for Task 2 (§5/§6/§7). Do not report Task 2 as passed until it has actually streamed a real response from OpenAI.
+**A real defect was found and fixed before the first live attempt.** Re-reading `run: async ({ messages, tools, signal }) => {...}` against the bundled SDK docs (`docs/ai-chat/backend.mdx`) showed `run()` never destructured `clientData` — the `{ profileId }` the frontend sends via `useTriggerChatTransport`'s `clientData` prop (`app/components/chat.tsx`) was never surfaced to the model at all. The model would have had no way to know which profile was active or which `profileId` to pass to `getBriefing`, which would have broken the entire "two profiles, different answers" claim silently. Fixed with the idiomatic SDK pattern:
+```ts
+clientDataSchema: z.object({ profileId: z.enum(["profile-a", "profile-b"]) }),
+onChatStart: async ({ clientData }) => {
+  chat.prompt.set(
+    `The active profile for this conversation is "${clientData.profileId}". ` +
+    `Always call getBriefing with profileId set to exactly "${clientData.profileId}" - ` +
+    `never ask the user which profile is active, it is already fixed for this session.`,
+  );
+},
+```
+`onChatStart` fires once per chat; `chat.toStreamTextOptions()` in `run()` picks up the stored prompt automatically via `chat.prompt.set()`. Redeployed as `prod` version `20260719.3`.
+
+**Live verification attempt (session-protocol script, not the mock test harness — a real call against the deployed `prod` task):** created a real chat session via `POST /api/v1/sessions` with `taskIdentifier: "mirror-agent"`, `trigger: "submit-message"`, the exact Demo Contract question, and `metadata: { profileId: "profile-a" }` (then again for `"profile-b"`), using the newly-added `TRIGGER_PROD_SECRET_KEY`. Both runs:
+- Correctly dispatched — `runs.retrieve()` showed the right `payload` (message, metadata, sessionId) and reached `status: "WAITING"` (the session's normal idle-suspend state, not a crash).
+- Streamed a **sanitized** `{"type":"error","errorText":"An error occurred."}` on `session.out`, followed immediately by `turn-complete` — `durationMs: 0`, `costInCents: 0`, consistent with the model call failing before generating any tokens.
+
+Root cause: `OPENAI_API_KEY` itself, re-tested directly against `api.openai.com/v1/chat/completions` immediately after — still `429 insufficient_quota`, the *same* error as before the user's reported OpenAI billing fix. **This confirms the Cloud dispatch path is fully correct** (session creation, secret-key auth, payload wiring, `clientData` fix all working) — the only failure is the OpenAI account itself not having usable quota yet. Nothing left to fix in this codebase; see `docs/11 Risks.md` R-22 for the exact error and next steps on the OpenAI side (check **Settings → Limits**, not just **Settings → Billing** — a common gotcha where a payment method is added but the usage limit is still $0).
 
 ### Task 3 — ClickHouse schema — ✅ PASSED LIVE
 
@@ -115,13 +135,22 @@ Not a transient outage or rate limit — an account-level disable, appealed by t
 - `.env.example` updated: `OPENAI_API_KEY` is now documented as required for `mirror-agent` itself, not only for the later Task 5 profile-extraction use it was originally added for.
 - `.env.local`: the disabled `ANTHROPIC_API_KEY` was removed entirely (non-functional, and already-exposed-in-chat regardless); replaced with `OPENAI_API_KEY=REPLACE_ME`.
 - `npm run typecheck/lint/build` all pass clean after the swap.
-- Redeployed: `npx trigger.dev@latest deploy --env prod` → `Version 20260719.2 deployed with 4 detected tasks`.
+- Redeployed: `npx trigger.dev@latest deploy --env prod` → `Version 20260719.2 deployed with 4 detected tasks`; redeployed again as `20260719.3` after the `clientData` fix below.
 
 **Net effect on the rest of this document:** every remaining reference to `ANTHROPIC_API_KEY` as Task 2's blocking credential should be read as `OPENAI_API_KEY` instead — the credential changed, the blocker shape (needs to be in `.env.local` for local dev and the Trigger.dev Cloud `prod` environment for the deployed task) did not.
 
-### Task 4 — `seed-gdelt` ingestion — 🟡 code complete, deployed, NOT yet run live (blocked, see §7)
+### Task 4 — `seed-gdelt` ingestion — 🟡 code complete, deployed, live-tested, blocked on a real GDELT outage (external)
 
-`npm run typecheck`, `npm run lint`, `npm run build` all pass clean. The GDELT DOC 2.0 API contract used by the parser (`{"articles": [{url, title, seendate, domain, language, sourcecountry}]}`, `seendate` as `YYYYMMDDTHHMMSSZ`, `sourcecountry` as a full country name not an ISO code) was verified live via direct `curl`/`node fetch` calls from this session — real, current (2026-07-18) articles came back correctly. Every attempt to trigger the task through the local `trigger.dev dev` worker failed with a TCP connect timeout to `api.gdeltproject.org`, root-caused to this session's sandbox networking (`docs/11 Risks.md` R-33), not a code defect. `seed-gdelt` is now deployed to Trigger.dev Cloud (`prod`) instead, which has normal internet access — but it still hasn't completed a live run there, because the `prod` environment has no `CLICKHOUSE_*` variables yet (§7). Do not report Task 4 as passed until it has actually inserted real rows and the manual diversity check (`docs/12 Scope Gate.md` §7.2) has been run against them.
+`npm run typecheck`, `npm run lint`, `npm run build` all pass clean. The GDELT DOC 2.0 API contract used by the parser was verified live via direct `curl`/`node fetch` calls earlier this session — real, current articles came back correctly at the time. The original local-sandbox networking limitation (`docs/11 Risks.md` R-33) is resolved via the Cloud deploy.
+
+**Two live attempts against `prod` (via `tasks.trigger("seed-gdelt", {})` with the new `TRIGGER_PROD_SECRET_KEY`), both `FAILED` the same way:**
+```
+Error: GDELT fetch failed: ConnectTimeoutError: Connect Timeout Error
+    at fetchGdeltQuery (file:///trigger/seed-gdelt.ts:166:11)
+```
+This confirms two things at once: **`CLICKHOUSE_*` credentials in `prod` are correct** — the task reached its `SELECT count() FROM articles` no-op check (which requires a working ClickHouse connection) before ever calling `fetchGdeltQuery`, so it got well past the point where a credential problem would have surfaced. And **GDELT's API is genuinely unreachable right now**, not a Trigger.dev Cloud networking issue: a `curl` to `api.gdeltproject.org` from a completely different network path (this session's own sandbox, run at the same time) also timed out with no response (`HTTP_STATUS:000`), while `https://www.gdeltproject.org` (the marketing site, a different subdomain) and `https://www.google.com` both returned `200` from that same path in the same few seconds. Three independent network paths, one consistent failure, isolated to exactly one hostname — this is a real GDELT-side outage, recorded as an occurrence of `docs/11 Risks.md` R-05.
+
+Do not report Task 4 as passed until it has actually inserted real rows and the manual diversity check (`docs/12 Scope Gate.md` §7.2) has been run against them. Before re-attempting, check `api.gdeltproject.org` is reachable again with a plain `curl` — no point re-triggering into the same outage.
 
 ---
 
@@ -152,29 +181,29 @@ Not a transient outage or rate limit — an account-level disable, appealed by t
 
 **ClickHouse Cloud:** service `visual-chat-agent`, Mini tier, 1 replica, 12 GiB, region `ca-central-1` (AWS), status running. Contains four tables: `_scratch_connectivity_check` (Task 1's diagnostic — not product schema, still unremoved) and the three product tables `articles`, `profile_cards`, `artifacts` (Task 3, created, empty — 0 rows in all three as of this handoff). `articles.h3_r5` is a `MATERIALIZED` column computed server-side via `geoToH3(longitude, latitude, 5)`; `profile_cards.item_type` is an `Enum8('goal'=1,'interest'=2,'entity'=3,'location'=4)`.
 
-**Trigger.dev:** project `visual-chat-agent` (`proj_nlisinjujntnqjrchglx`), org "Attentionic Inc." CLI is logged in and the login persists locally (no need to re-auth unless working from a different machine/environment). All 4 tasks (`connectivity-check`, `init-schema`, `seed-gdelt`, `mirror-agent`) are deployed live to the `prod` environment as version `20260719.2` — see the Deployment and Provider swap records in §3. `init-schema` has been invoked live and passed; `seed-gdelt` and `mirror-agent` have not yet been invoked live (both need env vars in `prod` first — §7). The `staging` environment does not exist for this project (confirmed live, §3) — `prod` is the only deploy target available.
+**Trigger.dev:** project `visual-chat-agent` (`proj_nlisinjujntnqjrchglx`), org "Attentionic Inc." CLI is logged in and the login persists locally (no need to re-auth unless working from a different machine/environment). All 4 tasks (`connectivity-check`, `init-schema`, `seed-gdelt`, `mirror-agent`) are deployed live to the `prod` environment as version `20260719.3` — see the Deployment and Provider swap records in §3. `init-schema` has been invoked live and passed; `seed-gdelt` and `mirror-agent` have both been invoked live and correctly dispatched (session/payload/credentials all confirmed working) but each hit a real external blocker before completing (§3, §7). The `staging` environment does not exist for this project (confirmed live, §3) — `prod` is the only deploy target available.
 
 **Frontend:** `app/page.tsx` renders `Chat` (`app/components/chat.tsx`) — a profile switcher (Profile A / Profile B, no auth), a button that sends the exact Demo Contract question, and a raw-JSON display of whatever the `getBriefing` tool returns. There are no Impact Radar / Timeline / Map visual components yet — that's a later task (after Task 5).
 
 ---
 
-## 5. Remaining external credentials required
+## 5. Credentials — all in place, both places
 
-Two separate places need credentials now: **local `.env.local`** (for local dev / this session's own scripts) and **the Trigger.dev Cloud `prod` environment's dashboard** (for the deployed tasks — a completely separate store, not synced from `.env.local` automatically). See §7 for the exact dashboard steps.
+Two separate stores exist: **local `.env.local`** (local dev / this session's own scripts) and **the Trigger.dev Cloud `prod` environment's dashboard** (the deployed tasks — a completely separate store, never auto-synced from `.env.local`). As of this handoff, both are fully populated:
 
-| Credential | Status locally (`.env.local`) | Status on Trigger.dev Cloud (`prod`) | Where to get it |
-|---|---|---|---|
-| `OPENAI_API_KEY` | ❌ missing (`REPLACE_ME`) | ❌ not set | platform.openai.com → API Keys. |
-| `CLICKHOUSE_URL` / `CLICKHOUSE_USERNAME` / `CLICKHOUSE_PASSWORD` | ✅ set | ❌ not set | Already have these locally — just need to be copied into the Trigger.dev dashboard too. |
-| `CLICKHOUSE_DATABASE` | not set (defaults to `"default"`) | not set | Optional either place. |
+| Credential | Local (`.env.local`) | Trigger.dev Cloud (`prod`) |
+|---|---|---|
+| `OPENAI_API_KEY` | ✅ set | ✅ set — confirmed live (the `429 insufficient_quota` response *proves* the key is present and being read; a missing/malformed key would fail differently) |
+| `CLICKHOUSE_URL` / `CLICKHOUSE_USERNAME` / `CLICKHOUSE_PASSWORD` | ✅ set | ✅ set — confirmed live (`seed-gdelt` reached its ClickHouse no-op check before failing on GDELT) |
+| `TRIGGER_PROD_SECRET_KEY` | ✅ set (local only, not needed on Cloud) | n/a |
 
-**`ANTHROPIC_API_KEY` is no longer used anywhere in this project** (§3 Provider swap) — don't chase it as a blocker; `OPENAI_API_KEY` replaced it for Task 2.
+`ANTHROPIC_API_KEY` is no longer used anywhere in this project (§3 Provider swap) — don't chase it as a blocker or re-add it.
 
-**Do not paste any of these into chat, and do not ask the user to.** Local values go in `.env.local` (the established pattern in this project — see `docs/11 Risks.md` R-31, now recurred twice). Cloud values go directly into the Trigger.dev dashboard's Environment Variables page (§7) — never through this conversation, and an automated script-based path was tried and failed (`docs/11 Risks.md` R-34).
+**Nothing left to configure.** The only remaining gaps are external account states — OpenAI quota and a GDELT outage (§7) — not missing credentials.
 
 ---
 
-## 6. Current environment variables expected (`.env.local`, names only — never values)
+## 6. Current environment variables (`.env.local`, names only — never values)
 
 | Variable | Status | Purpose |
 |---|---|---|
@@ -182,35 +211,23 @@ Two separate places need credentials now: **local `.env.local`** (for local dev 
 | `CLICKHOUSE_USERNAME` | ✅ set | `default` |
 | `CLICKHOUSE_PASSWORD` | ✅ set | ⚠️ was pasted in chat once — treat as exposed, rotate before any public sharing (`docs/11 Risks.md` R-31) |
 | `CLICKHOUSE_DATABASE` | not set | optional, defaults to `"default"` in `lib/env.ts` |
-| `TRIGGER_SECRET_KEY` | ✅ set | ⚠️ was also pasted in chat once — same rotation note applies. This is a **dev-environment-scoped** secret key — it cannot trigger or manage the `prod` environment's runs (a separate, `prod`-scoped secret key would be needed for that, and none is currently held anywhere in this project). |
-| `OPENAI_API_KEY` | ❌ placeholder (`REPLACE_ME`) | **a current blocker** — see §5/§7. Replaces `ANTHROPIC_API_KEY`, which is no longer used anywhere in this project (§3 Provider swap) — a live-tested key for it was pasted in chat, found to belong to a disabled Anthropic org, and removed from `.env.local` entirely. |
+| `TRIGGER_SECRET_KEY` | ✅ set | ⚠️ was pasted in chat once — same rotation note applies. **Dev-environment-scoped** — cannot trigger/manage `prod` runs. |
+| `TRIGGER_PROD_SECRET_KEY` | ✅ set | `prod`-scoped, retrieved via Claude Cowork from the dashboard's API Keys page and saved directly to this file (never pasted in chat) — used by this session's live-verification scripts to trigger and inspect `prod` runs. |
+| `OPENAI_API_KEY` | ✅ set | ⚠️ was pasted in chat once — treat as exposed (`docs/11 Risks.md` R-31). Live-confirmed present and read correctly (`docs/11 Risks.md` R-22) but the OpenAI account itself has no usable quota yet — an account issue, not a value/format issue. |
 
-`.env.local` is correctly gitignored (`.gitignore` has `.env.*`). Confirmed: no credential has ever been committed. `.env.example` at the repo root documents the same variables without values. **None of these are synced to Trigger.dev Cloud automatically** — Cloud environment variables are a separate store (§5/§7).
+`.env.local` is correctly gitignored (`.gitignore` has `.env.*`). Confirmed: no credential has ever been committed. `.env.example` documents the same variables without values (not yet updated for `TRIGGER_PROD_SECRET_KEY` — it's a verification-only convenience, not part of the app's runtime `env.ts` schema, so add it there only if it becomes a permanent fixture rather than a one-off testing aid).
 
 ---
 
-## 7. Outstanding blockers
+## 7. Outstanding blockers — both external, neither fixable in this codebase
 
-The local-sandbox networking limitation that originally blocked Task 4 (R-33 — local background processes time out connecting to new third-party hosts like `api.gdeltproject.org`, root-caused with a minimal repro outside Trigger.dev entirely) is **resolved for verification purposes**: the project is now deployed to Trigger.dev Cloud (`prod`, version `20260719.2`, §3), whose workers run on Trigger.dev's own infrastructure with normal internet access. What remains are environment-variable and credential gaps in that Cloud environment — three concrete manual actions, none of which can be done by pasting anything into this chat:
+The local-sandbox networking limitation that originally blocked Task 4 (R-33) is resolved via the Cloud deploy. Every credential/dashboard gap from earlier in this session (§5) is resolved. What's left:
 
-**0. Fix OpenAI billing first — a key was provided but is not usable yet.** Tested live (`curl` against `api.openai.com/v1/chat/completions`, model `gpt-4o`): the key authenticates but returns `429 insufficient_quota` — `"You exceeded your current quota, please check your plan and billing details."` This is an account/billing state, not a bad key. Fix at platform.openai.com → Settings → Billing (add a payment method / increase the quota), then re-test before doing step 1 below — no point adding a key to the Trigger.dev dashboard that will fail the same way there.
+**1. OpenAI account has no usable quota (blocks Task 2).** `OPENAI_API_KEY` authenticates correctly but every call returns `429 insufficient_quota`, confirmed live twice — once before the user reported adding OpenAI billing, once after, with the identical result both times (`docs/11 Risks.md` R-22). Likely causes, roughly in order of likelihood: the payment method was added but a separate **usage limit** on platform.openai.com → **Settings → Limits** is still $0 (a common gotcha distinct from just having a card on file); the billing change hasn't propagated yet (can take a few minutes on OpenAI's side); or the payment method was added to a different org/project than the one that issued this key. **Action needed:** the user checks platform.openai.com directly. Once fixed, re-run the live verification — no code or redeploy needed, just re-trigger.
 
-**1. Add `OPENAI_API_KEY` to the Trigger.dev Cloud `prod` environment** (blocks Task 2 — this replaces the earlier `ANTHROPIC_API_KEY` ask; see the Provider swap record in §3 for why):
-   - Get a key from platform.openai.com → API Keys.
-   - Go to `https://cloud.trigger.dev/projects/v3/proj_nlisinjujntnqjrchglx` → **Environment Variables** → **New environment variable** → environment **prod** → name `OPENAI_API_KEY` → mark **Secret** → paste the value directly into that dashboard field (not into `.env.local`, not into this chat — the Cloud environment is a separate store, §5).
-   - Optional but recommended: also add it to `.env.local` (`OPENAI_API_KEY=...`, replacing `REPLACE_ME`) so local dev has it too — the two are independent.
+**2. GDELT's API is currently unreachable (blocks Task 4).** `api.gdeltproject.org` failed to connect from three independent network paths at the same time, while unrelated hosts (including GDELT's own marketing site) responded normally — a real, live outage of that specific API, not anything in this project (`docs/11 Risks.md` R-05). **Action needed:** none from the user — just wait and retry. Before re-triggering `seed-gdelt`, sanity-check with a plain `curl https://api.gdeltproject.org/api/v2/doc/doc?query=test&mode=ArtList&maxrecords=1&format=json` to confirm it's back before spending a run on it.
 
-**2. Add the ClickHouse credentials to the same Cloud `prod` environment** (blocks Task 4):
-   - Same dashboard page, environment **prod**, add `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD` (mark each **Secret**) — copy these from `.env.local`, where they already exist.
-   - An automated push of these was attempted this session via the SDK's `envvars.upload()` management call (scripted, no chat exposure) and failed with a 401 — see `docs/11 Risks.md` R-34. The dashboard is the only path confirmed to work.
-
-**3. A way to trigger runs in `prod` for verification** — the `TRIGGER_SECRET_KEY` currently in `.env.local` is scoped to the **dev** environment only and cannot trigger or inspect `prod` runs. Two options:
-   - **Recommended:** get the `prod`-scoped secret key from the same dashboard project → **API Keys** page, add it to `.env.local` as e.g. `TRIGGER_PROD_SECRET_KEY` (same paste-not-chat pattern as every other credential here) — this lets live verification continue the same scripted way Tasks 1/3 were verified (`tasks.trigger()` / `runs.retrieve()`).
-   - **Alternative, no key needed:** use the dashboard's own test UI directly — `https://cloud.trigger.dev/projects/v3/proj_nlisinjujntnqjrchglx/test?environment=prod` — to manually trigger `mirror-agent` and `seed-gdelt` and read their results in the browser. Slower to iterate on, but requires nothing new from this session.
-
-Once all three are in place, live verification of Task 2 and Task 4 can proceed exactly as described in `docs/09 Sprint Plan.md`'s acceptance criteria — see §9 below for the precise steps.
-
-No other blockers. ClickHouse and Trigger.dev are both fully provisioned, connected, and verified. The product schema exists. The code for both Task 2 and Task 4 is finished and deployed — everything left is credentials and dashboard configuration, not implementation.
+Both are naturally transient — nothing in this project's code, configuration, or credentials needs to change for either to resolve. See §9 for the exact re-verification steps once each clears.
 
 ---
 
@@ -224,34 +241,35 @@ No other blockers. ClickHouse and Trigger.dev are both fully provisioned, connec
 - **No artifact persistence yet** — the `getBriefing` tool's fixture output is not written to any table. This is expected; the `artifacts` table now exists (Task 3), but the real tool write lands with Task 5, not before.
 - **`seed-gdelt`'s GDELT query set has not been empirically tuned.** The 4 queries in `trigger/seed-gdelt.ts` (`ai-regulation`, `climate-energy`, `markets`, `geopolitics`) and the `TAG_KEYWORDS`/`COUNTRY_LOOKUP` tables are a reasoned first pass, not yet validated against real result counts or the Demo Contract §4 thresholds (≥150 articles, ≥30 per profile side, ≥5 countries) because the task has never completed a live run (§7). Expect to iterate on query wording or the keyword list once real output is visible.
 - **`staging` Trigger.dev environment does not exist for this project** — only `dev` (local) and `prod` (Cloud) are available. If a genuine staging tier is wanted later, it needs to be provisioned/enabled from the dashboard first; not investigated further since `prod` was sufficient to unblock verification.
-- **No `prod`-scoped `TRIGGER_SECRET_KEY` held anywhere in this project yet** — only the `dev`-scoped one in `.env.local`. This blocks scripted live verification of the now-deployed `prod` tasks until one is added (§7 item 3).
 - **`gpt-4o` was picked without empirically comparing alternatives.** It's a safe, known-good, tool-calling-capable default (§3 Provider swap), not a researched "best" choice — revisit if cost, latency, or output quality become a concern once live verification actually runs.
+- **`.env.example` does not yet document `TRIGGER_PROD_SECRET_KEY`.** It's currently a verification-only convenience (not read by any app code, only by this session's throwaway scripts), so it was left out deliberately; add it if a future session starts depending on it for something durable.
 - **Untracked, unreferenced files sit in the repo root** (`architecture.md`, `data.md`, `implementation-guide.md`, `risk-register.md`, `tech-stack.md`, `mirror-visual-system.zip`, `mirror_strategy_bundle.zip`, `skills-lock.json`, two PDFs). These are not part of `docs/00`–`14` and are not read or referenced by any task in this plan — they appear to be earlier source/research material (note `risk-register.md` matches the "Deep Research corpus" cited in `docs/11 Risks.md`'s source notes). Left untouched and un-actioned per explicit instruction this session; still flag before deleting or relying on them, since their provenance wasn't established.
 
 ---
 
 ## 9. Exact next backlog item
 
-Task 2's and Task 4's code are both **done and deployed**. What's left is entirely the three manual dashboard/credential actions in §7 — there is no more code-only work available in Stage A until those land. Once they do:
+Task 2's and Task 4's code are both **done, deployed, and live-tested** — the dispatch path, credentials, and (for Task 2) a real bug are all confirmed working. What's left is waiting out two external conditions (§7), then re-running the exact same verification that already ran once:
 
-1. **Verify Task 2 live:** trigger `mirror-agent` (`prod`, now running on OpenAI's `gpt-4o` — §3 Provider swap) with the exact Demo Contract question ("What should I know today?") and `profileId: "profile-a"`, then again with `"profile-b"`. Confirm each run completes, `getBriefing` fires, and the output validates against `visualResponseManifestSchema`. Confirm the two manifests differ (verdict, top Impact Radar item) — this is the fixture-data version of the Demo Contract's core claim.
-2. **Verify Task 4 live:** trigger `seed-gdelt` (`prod`). Confirm it completes, check the returned summary (`totalInserted`, `distinctCountries`, `perTopicFetched`) against `docs/13 Demo Contract.md` §4's thresholds (≥150 articles, ≥30 per profile side, ≥5 countries, within 14 days). Then do the manual diversity check by hand in the ClickHouse console (`docs/12 Scope Gate.md` §7.2) before writing any more code.
-3. If using the scripted path (§7 item 3, recommended): a small script using `tasks.trigger`/`runs.retrieve` targeting the `prod`-scoped secret key is the fastest way to do both — see `trigger/init-schema.ts`'s pattern for the shape — write it outside the tracked tree or delete it after use, as was done for every prior live verification in this project.
-4. Once both pass, update `docs/09 Sprint Plan.md`'s Task 2 and Task 4 status lines to ✅ (same pattern as Task 1's/Task 3's), commit, and move to **Task 5** (`docs/09 Sprint Plan.md` / `docs/10 Task Backlog.md` §2): replace `getBriefing`'s fixture body with the real ranked-signal/timeline/H3 ClickHouse queries against the seeded `articles` table.
+1. **Once OpenAI quota is fixed:** re-trigger `mirror-agent` (`prod`) for `profile-a` then `profile-b` with the exact Demo Contract question. This session's verification script (a real session-protocol call, not the offline `mockChatAgent` test harness — see `docs/ai-chat/testing.mdx` for why that harness doesn't apply here, it never calls a real model) already proved the dispatch path works; only the model call itself needs to succeed this time. Confirm `getBriefing` fires and the two manifests differ (verdict, top Impact Radar item).
+2. **Once GDELT is reachable again:** re-trigger `seed-gdelt` (`prod`) — sanity-check with a plain `curl` to `api.gdeltproject.org` first (§7). Confirm the returned summary (`totalInserted`, `distinctCountries`, `perTopicFetched`) against `docs/13 Demo Contract.md` §4's thresholds (≥150 articles, ≥30 per profile side, ≥5 countries, within 14 days), then do the manual diversity check by hand in the ClickHouse console (`docs/12 Scope Gate.md` §7.2).
+3. For both, `TRIGGER_PROD_SECRET_KEY` is already in `.env.local` (§6) — a small script using `sessions.start()` (for the chat) or `tasks.trigger()` (for `seed-gdelt`) plus `runs.retrieve()`/`session.out` reading is the fastest path; write it outside the tracked tree or delete it after use, same as every prior live verification in this project.
+4. Once both pass, update `docs/09 Sprint Plan.md`'s Task 2 and Task 4 status lines to ✅, commit, and move to **Task 5** (`docs/09 Sprint Plan.md` / `docs/10 Task Backlog.md` §2): replace `getBriefing`'s fixture body with the real ranked-signal/timeline/H3 ClickHouse queries against the seeded `articles` table.
 
 ---
 
 ## 10. First action the next Claude Code session should perform
 
 1. Read this document in full (done, if you're reading this).
-2. Check whether the three items in §7 have landed: `OPENAI_API_KEY` (not `ANTHROPIC_API_KEY` — see §3 Provider swap) and `CLICKHOUSE_*` in the Trigger.dev Cloud `prod` environment, and either a `prod`-scoped secret key in `.env.local` or a plan to verify via the dashboard's test UI.
-   - **If all three are in place:** proceed directly to §9's live verification steps.
-   - **If not:** don't idle waiting — there is genuinely no other Stage A code work available until these land (Task 5 depends on Task 4's real data). Ask the user for whichever of the three is still missing, using the exact dashboard/`.env.local` paths in §7 — never ask for a value to be pasted into chat.
-3. Do not re-run Task 1's connectivity check or Task 3's `init-schema` as a first step — both already passed live and re-running either adds nothing (though `init-schema` is safe to re-run if ever needed, since it's idempotent and self-cleaning).
-4. Do not re-attempt Task 2 or Task 4's live run through the **local** `trigger.dev dev` worker — that path is root-caused as broken in this sandbox type (R-33) and deploying to Cloud was the fix, not a workaround to retry differently.
+2. Quickly re-check both external blockers before assuming either is still open:
+   - OpenAI: `curl https://api.openai.com/v1/chat/completions` with `$OPENAI_API_KEY` from `.env.local` — if it no longer returns `429 insufficient_quota`, Task 2 is unblocked.
+   - GDELT: `curl https://api.gdeltproject.org/api/v2/doc/doc?query=test&mode=ArtList&maxrecords=1&format=json` — if it responds instead of timing out, Task 4 is unblocked.
+3. **If either is now clear:** proceed directly to §9's re-verification steps for that task — no new code, no new credentials, no redeploy needed.
+4. **If both are still blocked:** don't idle waiting — there is genuinely no other Stage A code work available until at least one clears (Task 5 depends on Task 4's real data, and there's no other independent Stage A task left to pull forward). Report status and wait.
+5. Do not re-run Task 1's connectivity check or Task 3's `init-schema` — both already passed live. Do not re-attempt Task 2 or Task 4 through the **local** `trigger.dev dev` worker — that path is root-caused as broken in this sandbox type (R-33); the Cloud deploy is the permanent fix, not a workaround to retry differently.
 
 ---
 
 ## 11. Source notes
 
-Written per an explicit handoff request at the end of a Stage A implementation session. Updated across four subsequent sessions/turns (per `CLAUDE.md`'s standing authorization to continue implementation without re-approval, and later per explicit approved sequencing/infra changes): after Task 3 (ClickHouse schema) was written and verified live; after Task 4 (`seed-gdelt`) was written, statically verified, and its local live-run blocker investigated to a definitive root cause; after that blocker was resolved by deploying the project to Trigger.dev Cloud (`prod`, version `20260719.1`) — an explicitly approved earlier-than-planned deploy; and after the user's supplied `ANTHROPIC_API_KEY` turned out to belong to a disabled Anthropic organization, prompting a provider swap to OpenAI and a redeploy (`prod`, version `20260719.2`). The Cloud-credential-automation attempt from the deploy step still did not succeed (`docs/11 Risks.md` R-34), so this revision stops at the three manual dashboard/credential actions in §7 (now for `OPENAI_API_KEY`, not `ANTHROPIC_API_KEY`) rather than guessing further at unauthenticated API workarounds. Reflects repository state as of commit `dc8d63c` plus the provider-swap changes and documentation updates committed alongside this revision. Does not modify `CLAUDE.md`, `docs/13 Demo Contract.md`, `docs/12 Scope Gate.md`, `docs/08 MVP.md`, `docs/02 Product.md`, or `docs/01 Vision.md` — all five remain frozen, per instruction.
+Written per an explicit handoff request at the end of a Stage A implementation session. Updated across several subsequent sessions/turns (per `CLAUDE.md`'s standing authorization to continue implementation without re-approval, and later per explicit approved sequencing/infra changes): after Task 3 (ClickHouse schema) was written and verified live; after Task 4 (`seed-gdelt`) was written, statically verified, and its local live-run blocker investigated to a definitive root cause; after that blocker was resolved by deploying to Trigger.dev Cloud (`prod`, version `20260719.1`); after the user's supplied `ANTHROPIC_API_KEY` turned out to belong to a disabled Anthropic organization, prompting a provider swap to OpenAI and a redeploy (`20260719.2`); and after all remaining Cloud-dashboard credential gaps were resolved (via Claude Cowork, per the user's explicit choice) and live verification was actually attempted against the deployed `prod` environment — during which a real `clientData`/`profileId` wiring defect was found and fixed (redeploy `20260719.3`), and both Task 2 and Task 4 were confirmed to dispatch and execute correctly, blocked only by two external conditions (OpenAI account quota, a live GDELT outage) that this session cannot resolve. Reflects repository state as of commit `e3f59cd` plus the `clientData` fix and documentation updates committed alongside this revision. Does not modify `CLAUDE.md`, `docs/13 Demo Contract.md`, `docs/12 Scope Gate.md`, `docs/08 MVP.md`, `docs/02 Product.md`, or `docs/01 Vision.md` — all five remain frozen, per instruction.

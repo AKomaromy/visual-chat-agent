@@ -12,7 +12,7 @@ import { getBriefingManifest } from "../lib/briefing";
  * Input/output shape (profileId in, VisualResponseManifest out) is
  * unchanged from the fixture era, per the contract docs/10 §2 fixed.
  */
-const tools = {
+export const tools = {
   getBriefing: tool({
     description:
       "Return the personalized visual briefing manifest for the active profile. " +

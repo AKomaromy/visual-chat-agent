@@ -32,6 +32,8 @@ interface RankedArticleRow {
   url: string;
   published_at: string;
   country_code: string;
+  tags: string[];
+  h3: string;
   total_score: number;
 }
 
@@ -41,9 +43,11 @@ interface TimelineRow {
 }
 
 interface MapRow {
-  h3_r5: string;
+  h3: string;
   cnt: string;
   label: string;
+  lon: number;
+  lat: number;
 }
 
 const RADAR_LIMIT = 7;
@@ -121,10 +125,10 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
 
   const rankedResult = await clickhouse.query({
     query: `
-      SELECT id, title, url, published_at, country_code, tag_score + recency_score + geo_score AS total_score
+      SELECT id, title, url, published_at, country_code, tags, toString(h3) AS h3, tag_score + recency_score + geo_score AS total_score
       FROM (
         SELECT
-          id, title, url, published_at, country_code,
+          id, title, url, published_at, country_code, tags, h3_r5 AS h3,
           ${TAG_SCORE_SQL} AS tag_score,
           1.0 / (1 + dateDiff('day', published_at, now())) AS recency_score,
           if(has({geoCountries:Array(String)}, country_code), {geoBoost:Float64}, 0) AS geo_score
@@ -158,7 +162,21 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
 
   const mapResult = await clickhouse.query({
     query: `
-      SELECT toString(h3_r5) AS h3_r5, count() AS cnt, any(country_code) AS label
+      SELECT
+        -- Do NOT alias this back to "h3_r5" — that shadows the real
+        -- UInt64 column within this same SELECT list and h3ToGeo(h3_r5)
+        -- below would then resolve to the String alias instead of the
+        -- table column, failing with "Illegal type String... Must be
+        -- UInt64" (caught live while wiring this up).
+        toString(h3_r5) AS h3,
+        count() AS cnt,
+        any(country_code) AS label,
+        -- h3ToGeo's positional tuple elements are (lon, lat), NOT the
+        -- (misleading) "latitude"/"longitude" JSON field names it
+        -- labels them with — confirmed live in Task 3
+        -- (docs/14 Engineering Handoff.md §3). Do not swap these.
+        tupleElement(h3ToGeo(h3_r5), 1) AS lon,
+        tupleElement(h3ToGeo(h3_r5), 2) AS lat
       FROM articles
       WHERE hasAny(tags, {tags:Array(String)})
       GROUP BY h3_r5
@@ -177,16 +195,22 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
     evidenceIds: [row.id],
   }));
 
-  const evidence = rankedRows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    url: row.url,
-    // `domain(url)` is a real ClickHouse function computed from the
-    // stored url — not invented; keeps the schema minimal (no separate
-    // `domain`/`source` column needed on `articles`).
-    source: new URL(row.url).hostname,
-    publishedAt: row.published_at,
-  }));
+  const evidence = rankedRows.map((row) => {
+    const matchedTags = row.tags.filter((t) => wantedTags.includes(t));
+    return {
+      id: row.id,
+      title: row.title,
+      url: row.url,
+      // `domain(url)` is a real ClickHouse function computed from the
+      // stored url — not invented; keeps the schema minimal (no separate
+      // `domain`/`source` column needed on `articles`).
+      source: new URL(row.url).hostname,
+      publishedAt: row.published_at,
+      location: row.country_code,
+      relevanceContext:
+        matchedTags.length > 0 ? `Matches your profile's interest in: ${matchedTags.join(", ")}` : undefined,
+    };
+  });
 
   const top = rankedRows[0];
   if (!top) {
@@ -195,6 +219,12 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
   const verdictTitle = top.title.length > 120 ? `${top.title.slice(0, 117)}...` : top.title;
   const verdict = `Top signal: "${verdictTitle}" (${top.country_code}).`.slice(0, 160);
 
+  // published_at is an ISO datetime string ("2026-07-20T12:00:00.000Z");
+  // ClickHouse's toDate() bucket_date serializes as "YYYY-MM-DD" — the
+  // same first 10 characters, so this is a plain string-prefix match,
+  // not a recomputation of anything ClickHouse already determined.
+  const bucketDateOf = (iso: string) => iso.slice(0, 10);
+
   const manifest: VisualResponseManifest = {
     protocolVersion: 1,
     artifactId: randomUUID(),
@@ -202,11 +232,19 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
     verdict,
     views: {
       impactRadar,
-      timeline: timelineRows.map((row) => ({ bucketStart: row.bucket_date, count: Number(row.cnt) })),
-      map:
-        mapRows.length > 0
-          ? mapRows.map((row) => ({ h3: row.h3_r5, count: Number(row.cnt), label: row.label }))
-          : [],
+      timeline: timelineRows.map((row) => ({
+        bucketStart: row.bucket_date,
+        count: Number(row.cnt),
+        evidenceIds: rankedRows.filter((r) => bucketDateOf(r.published_at) === row.bucket_date).map((r) => r.id),
+      })),
+      map: mapRows.map((row) => ({
+        h3: row.h3,
+        count: Number(row.cnt),
+        label: row.label,
+        lat: row.lat,
+        lon: row.lon,
+        evidenceIds: rankedRows.filter((r) => r.h3 === row.h3).map((r) => r.id),
+      })),
     },
     evidence,
     createdAt: new Date().toISOString(),

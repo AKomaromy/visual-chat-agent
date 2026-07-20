@@ -14,6 +14,11 @@ export const evidenceItemSchema = z.object({
   url: z.string(),
   source: z.string(),
   publishedAt: z.string(),
+  // Additive fields for the Evidence Drawer (visual-workspace build,
+  // docs/13 Demo Contract.md §5) — both derived from stored columns
+  // already on `articles` (country_code, tags), never invented.
+  location: z.string().optional(),
+  relevanceContext: z.string().optional(),
 });
 export type EvidenceItem = z.infer<typeof evidenceItemSchema>;
 
@@ -28,12 +33,24 @@ export const impactRadarItemSchema = z.object({
 export const timelineBucketSchema = z.object({
   bucketStart: z.string(),
   count: z.number(),
+  // Which of the manifest's evidence items fall in this bucket — lets
+  // selecting a timeline bar open the same Evidence Drawer a radar
+  // signal would, per the coordinated-filtering requirement
+  // (docs/12 Scope Gate.md §3). Computed server-side in lib/briefing.ts
+  // from already-fetched rows, not a new ClickHouse query.
+  evidenceIds: z.array(z.string()).optional(),
 });
 
 export const mapCellSchema = z.object({
   h3: z.string(),
   count: z.number(),
   label: z.string().optional(),
+  // Decoded server-side via ClickHouse's h3ToGeo (docs/14 Engineering
+  // Handoff.md §3 — confirmed (lon, lat) element order) so the map can
+  // plot real points without any client-side geo computation.
+  lat: z.number().optional(),
+  lon: z.number().optional(),
+  evidenceIds: z.array(z.string()).optional(),
 });
 
 export const visualResponseManifestSchema = z.object({

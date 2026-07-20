@@ -1,6 +1,8 @@
 import { task, logger } from "@trigger.dev/sdk";
 import { randomUUID } from "node:crypto";
 import { getClickHouseClient } from "../lib/clickhouse";
+import { deriveTags } from "../lib/tags";
+import { DEV_FIXTURE_TAG } from "../lib/dev-fixtures-tag";
 
 /**
  * Sprint Plan Task 4 — the resilient, replayable seed ingestion (WF-B,
@@ -40,34 +42,6 @@ const SEED_QUERIES: { topic: string; query: string }[] = [
     query: '(geopolitics OR sanctions OR diplomacy OR "foreign policy") sourcelang:english',
   },
 ];
-
-// Lightweight keyword -> tag vocabulary, matched against each article's
-// title at ingestion time (docs/12 Scope Gate.md §7.1 — not GDELT's own
-// theme/entity codes). Deliberately overlaps with the exact profile-card
-// labels in docs/13 Demo Contract.md §2-3 so Task 5's tag match has real
-// shared vocabulary to work with.
-const TAG_KEYWORDS: Record<string, string[]> = {
-  ai: ["ai ", " ai", "artificial intelligence", "chatgpt", "llm", "machine learning", "generative ai"],
-  regulation: ["regulation", "regulatory", "compliance", "legislation", " law", " act "],
-  enterprise: ["enterprise", "startup", "company", "corporate", "business", "tech industry"],
-  "llm-tooling": ["llm", "chatbot", "copilot", "openai", "anthropic", "google ai", "ai model"],
-  climate: ["climate", "emissions", "warming", "environment"],
-  carbon: ["carbon"],
-  energy: ["energy", "power grid", " oil", " gas", "renewable", "solar", "wind power"],
-  eu: ["european union", "eu regulat", "eu carbon", "eu policy", "brussels", " eu "],
-  markets: ["market", "stock", "shares", "trading", "economy", "inflation", "finance", "central bank"],
-  geopolitics: ["geopolitic", "diplomat", "sanctions", "foreign policy", "conflict"],
-  "united-states": ["united states", "u.s.", "washington", "congress", "white house"],
-};
-
-function deriveTags(title: string): string[] {
-  const lower = ` ${title.toLowerCase()} `;
-  const tags: string[] = [];
-  for (const [tag, keywords] of Object.entries(TAG_KEYWORDS)) {
-    if (keywords.some((k) => lower.includes(k))) tags.push(tag);
-  }
-  return tags;
-}
 
 // GDELT's `sourcecountry` field is a full country name, not an ISO code,
 // and the DOC 2.0 API returns no coordinates at all (docs/12 Scope
@@ -187,14 +161,19 @@ export const seedGdelt = task({
   run: async () => {
     const clickhouse = getClickHouseClient();
 
+    // Excludes dev-fixture rows (trigger/load-dev-fixtures.ts, tagged
+    // DEV_FIXTURE_TAG) from the no-op check — those are a temporary Task 5
+    // workaround for the GDELT outage, not real seed data, and must never
+    // block or be mistaken for the real seed load this check guards.
     const existingCountResult = await clickhouse.query({
-      query: `SELECT count() AS n FROM articles`,
+      query: `SELECT count() AS n FROM articles WHERE NOT has(tags, {fixtureTag:String})`,
+      query_params: { fixtureTag: DEV_FIXTURE_TAG },
       format: "JSONEachRow",
     });
     const [existingCountRow] = await existingCountResult.json<{ n: string }>();
     const existingCount = Number(existingCountRow?.n ?? 0);
     if (existingCount > 0) {
-      logger.info("articles already populated, no-op", { existingCount });
+      logger.info("articles already populated with real data, no-op", { existingCount });
       return { skipped: true, existingCount };
     }
 

@@ -76,6 +76,15 @@ These are the highest-leverage, most sequence-dependent tasks — do them in thi
 
 **Judging contribution:** this is the moment the required story becomes real end to end (steps 3–6 and 8 in `00 Executive Brief.md` §3 all become true simultaneously). Serves Use of ClickHouse & Trigger.dev (25%), Problem Fit (20%), and Technical Implementation (20%) at once — the single highest-leverage task in the plan.
 
+**Status: 🟢 Code complete, verified against controlled development fixtures — NOT yet verified against live GDELT data (blocked by Task 4, see above).** `lib/briefing.ts` implements the full query: `getBriefing`'s fixture body in `trigger/chat.ts` is gone entirely, replaced by a real 3-query ClickHouse pipeline (ranked signals, timeline buckets, H3-aggregated map cells), all weighting/ranking/geography done in SQL, not in application code. Deployed to Trigger.dev Cloud (`prod`, version `20260720.1`, now 6 tasks).
+
+Because Task 4 is blocked on the live GDELT outage above, this was implemented and verified against **controlled, clearly-marked development fixtures** (`trigger/load-dev-fixtures.ts` — 20 hand-authored articles, tagged `dev-fixture`, `[DEV FIXTURE]`-prefixed titles, fake `fixture.mirror-dev.test` URLs, spanning 7 countries and a 1–11 day recency spread) plus permanent profile-card seed data for both locked profiles (`trigger/seed-profile-cards.ts`, the exact `docs/13 Demo Contract.md` §2-3 cards). Verified directly against ClickHouse (`lib/briefing.ts` called standalone, no Trigger.dev/OpenAI involved):
+- Profile A's top-7 Impact Radar is entirely AI/regulation/US stories; Profile B's is entirely climate/carbon/EU stories — zero overlap in the top signal.
+- Verdicts differ, top radar item differs, every radar item's `evidenceIds` resolves to a real evidence entry, every evidence URL is a fixture URL (traceable, no live claims).
+- The "no material signals" fallback (`docs/10 Task Backlog.md` §7) was also verified for a profile with no cards.
+
+**This is fixture-verified, not live-data-verified** — the dev fixtures do not count toward Task 4's acceptance criteria and are isolated by design (`seed-gdelt`'s no-op guard explicitly excludes the `dev-fixture` tag, so they can never block or masquerade as the real seed). Once Task 4's live GDELT seed succeeds, re-run this same spot-check against real rows (`docs/14 Engineering Handoff.md` §9) before marking Task 5 fully done end-to-end.
+
 ---
 
 ## 3. Session plan (indicative — compress or split as your actual free hours allow)

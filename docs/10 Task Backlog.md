@@ -30,7 +30,7 @@ That's the complete Trigger.dev surface for this build. Everything else in the o
 
 If the combined payload risks the ~1 MiB Trigger.dev stream-record limit (unlikely at seed-data scale, but check), split into `getSignals` + `getMapData` rather than adding a third unrelated tool.
 
-**Status: 🟡 implemented as a fixture at `trigger/chat.ts` (`getBriefing`), not yet real.** Input is currently `{ profileId }` only (no free-text question passed through, since there's one response pattern - matches the spec above). `execute` returns one of two hard-coded manifests keyed by `"profile-a"`/`"profile-b"`, matching Demo Contract §2-3. **Task 5 replaces only the inside of `execute`** with the real ranked-signal/timeline/H3 queries described above - the tool's input/output shape is already final.
+**Status: 🟢 real, implemented in `lib/briefing.ts`, called from `trigger/chat.ts`.** Input remains `{ profileId }` only, output remains `visualResponseManifestSchema` — the contract didn't change. `execute` now runs three parameterized ClickHouse queries (ranked signals, timeline, H3 map) instead of returning a hard-coded manifest; ClickHouse does all weighting/ranking/geography math, the tool just assembles the result. Verified correct against controlled dev fixtures (`docs/09 Sprint Plan.md` Task 5) — not yet against live GDELT data, since Task 4 is blocked (`docs/11 Risks.md` R-05).
 
 ---
 
@@ -65,8 +65,8 @@ Reordered per the pre-implementation design review (`12 Scope Gate.md` §7.6) �
 1. 🟡 `mirror-agent` skeleton with a fixture manifest (Task 2) — code complete and deployed to Trigger.dev Cloud (`prod`), live-tested and blocked on OpenAI billing/quota (external).
 2. ✅ `articles`, `profile_cards`, `artifacts` tables, including the H3 known-coordinate sanity check (Task 3) — passed live.
 3. 🟡 `seed-gdelt` task across 4 topically diverse queries (Task 4) — code complete and deployed to Trigger.dev Cloud (`prod`), live-tested and blocked on a real GDELT API outage (external, `docs/11 Risks.md` R-05). The manual keyword-diversity check still needs to happen once a live run produces data.
-4. `profile_cards` seed rows for Profile A (via paste-extraction) and Profile B (pre-seeded fixture).
-5. `getBriefing` tool wired to real queries, replacing the fixture (Task 5).
+4. ✅ `profile_cards` seed rows for both locked profiles (`trigger/seed-profile-cards.ts`) — the exact `docs/13 Demo Contract.md` §2-3 cards for both, since Profile A's live paste-extraction UI is a later Session 5 item and Profile B is pre-seeded by design regardless. Permanent, not a fixture.
+5. ✅ `getBriefing` tool wired to real queries, replacing the fixture (Task 5) — `lib/briefing.ts`. Verified against controlled dev fixtures (`trigger/load-dev-fixtures.ts`, isolated/removable, excluded from Task 4's no-op guard) since Task 4's real seed is blocked by the GDELT outage; re-verify against real data once that clears.
 6. Impact Radar, Timeline, Map renderers + Evidence Drawer — the drawer renders from the stored title/domain/date, with the outbound article URL as a secondary link, so one dead external link during the demo can't break the "every claim has evidence" requirement (`12 Scope Gate.md` §7.4).
 7. Coordinated selection/filtering across the three renderers.
 

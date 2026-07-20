@@ -43,7 +43,10 @@ export const mirrorAgent = chat.agent({
     chat.prompt.set(
       `The active profile for this conversation is "${clientData.profileId}". ` +
         `Always call getBriefing with profileId set to exactly "${clientData.profileId}" - ` +
-        `never ask the user which profile is active, it is already fixed for this session.`,
+        `never ask the user which profile is active, it is already fixed for this session. ` +
+        `After calling getBriefing, do not write any additional prose, summary, or narration - ` +
+        `the tool's output is the entire answer and is rendered directly as a visual workspace. ` +
+        `Do not describe, restate, or list the briefing's contents in text.`,
     );
   },
   run: async ({ messages, tools, signal }) => {

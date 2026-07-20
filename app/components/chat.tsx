@@ -147,8 +147,6 @@ export function Chat() {
           }
           return <Workspace manifest={parsed.data} />;
         })()}
-
-      <p className="text-xs text-neutral-600">Status: {status}</p>
     </div>
   );
 }

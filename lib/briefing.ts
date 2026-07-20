@@ -201,9 +201,9 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
       id: row.id,
       title: row.title,
       url: row.url,
-      // `domain(url)` is a real ClickHouse function computed from the
-      // stored url — not invented; keeps the schema minimal (no separate
-      // `domain`/`source` column needed on `articles`).
+      // Hostname parsed from the stored url (already-fetched, ClickHouse-
+      // sourced data) — not invented, and keeps the schema minimal (no
+      // separate `domain`/`source` column needed on `articles`).
       source: new URL(row.url).hostname,
       publishedAt: row.published_at,
       location: row.country_code,

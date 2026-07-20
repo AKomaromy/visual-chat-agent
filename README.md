@@ -61,6 +61,10 @@ Scope was cut early and documented, not discovered late:
 
 See [`docs/12 Scope Gate.md`](docs/12%20Scope%20Gate.md) for the full reasoning behind each cut.
 
+## Screenshots
+
+Curated, captured against the real running app — see [`demo-assets/`](demo-assets/) for the full set and what each one shows.
+
 ## Architecture
 
 Single Next.js 16 (App Router) app — not a monorepo, deliberately, given the scope. See [`docs/14 Engineering Handoff.md §4`](docs/14%20Engineering%20Handoff.md) for the current file tree and full architecture notes.
@@ -87,10 +91,15 @@ Requires a ClickHouse Cloud service, a Trigger.dev project, and an OpenAI API ke
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in CLICKHOUSE_*, TRIGGER_SECRET_KEY, OPENAI_API_KEY
-npx trigger.dev@4.5.4 dev    # in one terminal — runs the Trigger.dev worker locally
-npm run dev                  # in another — runs the Next.js app
+cp .env.example .env.local     # fill in CLICKHOUSE_*, TRIGGER_SECRET_KEY, OPENAI_API_KEY
+npx trigger.dev@4.5.4 login    # authenticate the CLI with your own Trigger.dev account
+npx trigger.dev@4.5.4 dev      # in one terminal — runs the Trigger.dev worker locally
+npm run dev                    # in another — runs the Next.js app
 ```
+
+Two things a fresh clone needs beyond `.env.local`:
+- **`trigger.config.ts`'s `TRIGGER_PROJECT_REF`** is this project's own Trigger.dev project ref — replace it with your own project's ref (from `npx trigger.dev@4.5.4 login` + creating a project on [cloud.trigger.dev](https://cloud.trigger.dev)) before running.
+- **Seed the two demo profiles and the schema once**, via the Trigger.dev dashboard's "Test" tab or the SDK, in this order: `init-schema` → `seed-profile-cards` → `load-dev-fixtures` (the real `seed-gdelt` ingestion is currently blocked by an external GDELT issue — see "Current, honest status" above — so the dev fixtures are the working dataset until that clears).
 
 Pin the Trigger.dev CLI to `4.5.4` to match this project's pinned SDK version — `@latest` may resolve to a newer minor and refuse to run against a mismatched SDK.
 

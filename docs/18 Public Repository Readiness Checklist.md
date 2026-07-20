@@ -25,7 +25,7 @@
 
 **Conclusion:** no secret has ever been committed to this repository — confirmed, not assumed. The three credentials named in R-31 should still be treated as exposed (per that risk's own standing rule) and rotated before or around publishing, because the chat-transcript exposure is a separate channel that git evidence cannot speak to either way — but the repository itself is clean.
 
-- [ ] **Action for Andrew:** rotate `CLICKHOUSE_PASSWORD` and `TRIGGER_SECRET_KEY` before or immediately after making the repo public (ClickHouse: Settings → Reset password; Trigger.dev: API Keys → revoke and regenerate). The Anthropic key is already dead (disabled org) and no longer used anywhere in this codebase.
+- [ ] **Action for Andrew:** rotate `CLICKHOUSE_PASSWORD`, `TRIGGER_SECRET_KEY`, **and `OPENAI_API_KEY`** before or immediately after making the repo public (ClickHouse: Settings → Reset password; Trigger.dev: API Keys → revoke and regenerate; OpenAI: platform.openai.com → API Keys → create replacement, delete old). All three are now confirmed chat-exposed (`docs/11 Risks.md` R-31, updated Session 7). See `docs/19 Security Rotation and Provider Resilience Runbook.md` for the guided per-credential procedure. The Anthropic key is already dead (disabled org) and no longer used anywhere in this codebase.
 - [ ] Run a secret scanner (`gitleaks`/`trufflehog` or GitHub's own scanning) over full history as a belt-and-suspenders check before flipping public.
 
 ## 3. Untracked files at the repository root — dispositions still needed
@@ -54,7 +54,7 @@ These sit on disk, are **not** gitignored, and would be committed by a careless 
 ## 5. Before flipping the repository public
 
 1. Decide dispositions for §3's untracked files (move/incorporate/delete) — do not `git add -A` before this is settled.
-2. Rotate the two live exposed secrets (§2).
+2. Rotate the three live exposed secrets (§2).
 3. Run a secret scanner over full history.
 4. Push all commits, flip repository visibility to public.
 5. **Verify signed-out access immediately**, not at the last minute: open the repo URL in a private/incognito window and confirm the README, code, and docs all render without needing to be logged into GitHub.

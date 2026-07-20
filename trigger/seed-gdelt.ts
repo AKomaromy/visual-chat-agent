@@ -158,6 +158,13 @@ async function fetchGdeltQuery(query: string, attempt = 1): Promise<GdeltArticle
 
 export const seedGdelt = task({
   id: "seed-gdelt",
+  // Override the project's 60s default (trigger.config.ts) — 4 sequential
+  // GDELT queries with built-in 429 backoff (up to 4 retries at
+  // 5s/10s/15s/20s each) plus the deliberate 2s politeness delay between
+  // queries can exceed 60s CPU time even without a full ingestion outage.
+  // Caught live: a real run hit MAX_DURATION_EXCEEDED once GDELT recovered
+  // from its prior outage but was still rate-limiting adjacent requests.
+  maxDuration: 300,
   run: async () => {
     const clickhouse = getClickHouseClient();
 

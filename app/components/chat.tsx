@@ -18,6 +18,28 @@ const DEMO_QUESTION = "What should I know today?";
 
 type ProfileId = "profile-a" | "profile-b";
 
+// Trigger.dev Sessions are terminal - once closed, that exact externalId can
+// never start a new session (confirmed live: a stale dev-testing session on
+// "profile-a-chat" left it permanently closed, 409 "Session is closed; use a
+// different externalId"). A fixed per-profile chatId would mean one closed
+// session locks that profile out forever. Instead, mint a fresh id per
+// profile the first time it's used in a browser tab and persist it in
+// sessionStorage - this still resumes correctly across a same-tab reload
+// (needed for the durable-refresh proof) without ever reusing a dead id
+// across separate sessions/tabs. Read directly during render (not via
+// useEffect+setState) since it's an idempotent, synchronous external-store
+// lookup: after the first call writes it, every later call for the same
+// profileId reads back the same value.
+function getOrCreateChatId(profileId: ProfileId): string {
+  if (typeof window === "undefined") return `${profileId}-chat`;
+  const key = `mirror-chat-id:${profileId}`;
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const fresh = `${profileId}-chat-${crypto.randomUUID()}`;
+  window.sessionStorage.setItem(key, fresh);
+  return fresh;
+}
+
 function LoadingStage({ label }: { label: string }) {
   // Skeleton preserving final geometry (docs/04 Visual Language.md §12),
   // concrete stage language rather than "Thinking..." (docs/03 UX.md §10).
@@ -33,7 +55,7 @@ function LoadingStage({ label }: { label: string }) {
 
 export function Chat() {
   const [profileId, setProfileId] = useState<ProfileId>("profile-a");
-  const chatId = `${profileId}-chat`;
+  const chatId = getOrCreateChatId(profileId);
 
   const transport = useTriggerChatTransport<typeof mirrorAgent>({
     task: "mirror-agent",
@@ -49,7 +71,6 @@ export function Chat() {
   const briefingPart = lastMessage?.parts.find(
     (part): part is Extract<Msg["parts"][number], { type: "tool-getBriefing" }> => part.type === "tool-getBriefing",
   );
-  const textParts = lastMessage?.role === "assistant" ? lastMessage.parts.filter((p) => p.type === "text") : [];
 
   return (
     <div className="flex w-full max-w-3xl flex-col gap-4">
@@ -126,12 +147,6 @@ export function Chat() {
           }
           return <Workspace manifest={parsed.data} />;
         })()}
-
-      {textParts && textParts.length > 0 && (
-        <div className="text-sm text-neutral-400">
-          {textParts.map((part, i) => (part.type === "text" ? <p key={i}>{part.text}</p> : null))}
-        </div>
-      )}
 
       <p className="text-xs text-neutral-600">Status: {status}</p>
     </div>

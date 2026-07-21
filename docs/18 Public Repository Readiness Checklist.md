@@ -25,8 +25,7 @@
 
 **Conclusion:** no secret has ever been committed to this repository — confirmed, not assumed. The three credentials named in R-31 should still be treated as exposed (per that risk's own standing rule) and rotated before or around publishing, because the chat-transcript exposure is a separate channel that git evidence cannot speak to either way — but the repository itself is clean.
 
-- [x] **Local rotation done:** Andrew rotated `CLICKHOUSE_PASSWORD`, `TRIGGER_SECRET_KEY`, and `OPENAI_API_KEY` directly in local `.env.local` during the Session 7 hostile-judge hardening pass.
-- [ ] **Action for Andrew, still pending:** update the same three credentials in the **Trigger.dev Cloud `prod` environment's dashboard** (Project → Environment Variables → `prod`) — a separate store from `.env.local`, never auto-synced, and it still holds the pre-rotation values. See `docs/19 Security Rotation and Provider Resilience Runbook.md` for the guided per-credential procedure. The Anthropic key is already dead (disabled org) and no longer used anywhere in this codebase.
+- [x] **Rotation done, both places:** Andrew rotated `CLICKHOUSE_PASSWORD`, `TRIGGER_SECRET_KEY`, and `OPENAI_API_KEY` in local `.env.local` and in the Trigger.dev Cloud `prod` environment's dashboard (a separate store, never auto-synced) during the Session 7 hostile-judge hardening pass. Both were live-reverified working end-to-end. The old, pre-rotation values are safe to revoke. The Anthropic key is already dead (disabled org) and no longer used anywhere in this codebase.
 - [ ] Run a secret scanner (`gitleaks`/`trufflehog` or GitHub's own scanning) over full history as a belt-and-suspenders check before flipping public.
 
 ## 3. Untracked files at the repository root — dispositions still needed
@@ -55,7 +54,7 @@ These sit on disk, are **not** gitignored, and would be committed by a careless 
 ## 5. Before flipping the repository public
 
 1. Decide dispositions for §3's untracked files (move/incorporate/delete) — do not `git add -A` before this is settled.
-2. Rotate the three live exposed secrets in the Trigger.dev Cloud `prod` dashboard — local `.env.local` is already done (§2).
+2. Rotate the three live exposed secrets — done in both `.env.local` and the Trigger.dev Cloud `prod` dashboard (§2).
 3. Run a secret scanner over full history.
 4. Push all commits, flip repository visibility to public.
 5. **Verify signed-out access immediately**, not at the last minute: open the repo URL in a private/incognito window and confirm the README, code, and docs all render without needing to be logged into GitHub.

@@ -11,9 +11,13 @@ import { Workspace } from "@/app/components/workspace/Workspace";
 
 type Msg = InferChatUIMessageFromTools<typeof tools>;
 
-// The exact Demo Contract question (docs/13 Demo Contract.md §1) - not a
-// generic input placeholder. Never change this string without reopening the
-// Demo Contract.
+// The exact Demo Contract question (docs/13 Demo Contract.md §1). The
+// question input below is editable (hostile-judge hardening pass - an
+// editable input plus bounded agent interpretation is what makes
+// chat.agent() materially meaningful, see trigger/chat.ts), but it always
+// starts prefilled with this exact string and "Reset" always returns to
+// it, so the locked one-click demo path is never lost. Never change this
+// string without reopening the Demo Contract.
 const DEMO_QUESTION = "What should I know today?";
 
 type ProfileId = "profile-a" | "profile-b";
@@ -55,6 +59,7 @@ function LoadingStage({ label }: { label: string }) {
 
 export function Chat() {
   const [profileId, setProfileId] = useState<ProfileId>("profile-a");
+  const [question, setQuestion] = useState(DEMO_QUESTION);
   const chatId = getOrCreateChatId(profileId);
 
   const transport = useTriggerChatTransport<typeof mirrorAgent>({
@@ -72,8 +77,11 @@ export function Chat() {
     (part): part is Extract<Msg["parts"][number], { type: "tool-getBriefing" }> => part.type === "tool-getBriefing",
   );
 
+  const trimmedQuestion = question.trim();
+  const isDefaultQuestion = trimmedQuestion === DEMO_QUESTION;
+
   return (
-    <div className="flex w-full max-w-3xl flex-col gap-4">
+    <div className="flex w-full max-w-6xl flex-col gap-4">
       <div className="flex gap-2">
         <button
           type="button"
@@ -93,14 +101,45 @@ export function Chat() {
         </button>
       </div>
 
-      <button
-        type="button"
-        disabled={!canAsk}
-        onClick={() => sendMessage({ text: DEMO_QUESTION }, { metadata: { profileId } })}
-        className="rounded bg-blue-600 px-4 py-2 text-sm font-medium disabled:opacity-50"
-      >
-        Ask: &ldquo;{DEMO_QUESTION}&rdquo;
-      </button>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          type="text"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          disabled={!canAsk}
+          aria-label="Question to ask Mirror"
+          placeholder={DEMO_QUESTION}
+          className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 disabled:opacity-50"
+        />
+        <div className="flex gap-2">
+          {!isDefaultQuestion && (
+            <button
+              type="button"
+              onClick={() => setQuestion(DEMO_QUESTION)}
+              disabled={!canAsk}
+              className="rounded px-3 py-2 text-xs text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:opacity-50"
+              title="Reset to the locked Demo Contract question"
+            >
+              Reset
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={!canAsk || trimmedQuestion.length === 0}
+            onClick={() => sendMessage({ text: trimmedQuestion }, { metadata: { profileId } })}
+            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            Ask
+          </button>
+        </div>
+      </div>
+
+      {!isDefaultQuestion && (
+        <p className="text-xs text-neutral-500">
+          Mirror will interpret this question into a bounded time window and/or topic focus if it names one — the
+          ranking, evidence, geography, and verdict are still computed entirely by ClickHouse.
+        </p>
+      )}
 
       {/* Top-level connection error (docs/03 UX.md §15) - distinct from a
           failed getBriefing tool call, which is handled below instead. */}

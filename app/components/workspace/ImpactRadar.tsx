@@ -1,10 +1,15 @@
 import type { ImpactRadarItem, WorkspaceSelection } from "./types";
 import { intersects } from "./types";
 
-const DIRECTION_LABEL: Record<ImpactRadarItem["direction"], { glyph: string; text: string }> = {
-  rising: { glyph: "▲", text: "Rising" },
-  stable: { glyph: "▬", text: "Stable" },
-  declining: { glyph: "▼", text: "Declining" },
+// Honest recency labels, not a claimed trend — this is purely how old the
+// underlying article is, never presented as rising/declining interest or
+// volume (docs/11 Risks.md, the momentum-mislabeling fix). No glyph: an
+// arrow here would visually imply direction/momentum this data doesn't
+// actually measure.
+const RECENCY_LABEL: Record<ImpactRadarItem["recency"], string> = {
+  new: "New",
+  recent: "Recent",
+  older: "Older",
 };
 
 /**
@@ -12,8 +17,7 @@ const DIRECTION_LABEL: Record<ImpactRadarItem["direction"], { glyph: string; tex
  * (docs/13 Demo Contract.md §5). A sorted rank list (docs/04 Visual
  * Language.md §3: "Rank entities → sorted bars/lollipop", not unordered
  * cards) — ClickHouse's own ORDER BY total_score DESC decides the order,
- * this component never re-sorts. Direction is shown with a glyph + word,
- * never color alone (docs/03 UX.md §14).
+ * this component never re-sorts.
  */
 export function ImpactRadar({
   items,
@@ -36,7 +40,7 @@ export function ImpactRadar({
           const key = `radar:${item.id}`;
           const isActive = selection?.key === key;
           const isHighlighted = !isActive && !!selection && intersects(selection.evidenceIds, item.evidenceIds);
-          const direction = DIRECTION_LABEL[item.direction];
+          const recencyLabel = RECENCY_LABEL[item.recency];
 
           return (
             <li key={item.id}>
@@ -66,10 +70,7 @@ export function ImpactRadar({
                       style={{ width: `${Math.max(8, (item.score / maxScore) * 100)}%` }}
                     />
                   </span>
-                  <span className="w-20 shrink-0 text-xs tabular-nums text-neutral-400">
-                    <span aria-hidden="true">{direction.glyph} </span>
-                    {direction.text}
-                  </span>
+                  <span className="w-16 shrink-0 text-xs text-neutral-400">{recencyLabel}</span>
                 </span>
               </button>
             </li>

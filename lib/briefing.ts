@@ -18,6 +18,13 @@ import { visualResponseManifestSchema, type VisualResponseManifest } from "./vis
  * card. Tags are derived from card labels with the exact same vocabulary
  * (lib/tags.ts) used to tag articles at ingestion — the shared-vocabulary
  * design called out in docs/12 Scope Gate.md §7.1.
+ *
+ * `timeHorizonDays`/`topicFocus` (added in the hostile-judge hardening
+ * pass) are bounded, optional request parameters the agent may extract
+ * from a user's typed question (trigger/chat.ts) — never model-invented
+ * rankings/evidence/geography, just a narrower WHERE clause applied
+ * identically across all three queries below. Omitting both reproduces
+ * the original default-question behavior exactly.
  */
 
 interface ProfileCardRow {
@@ -26,7 +33,10 @@ interface ProfileCardRow {
   weight: number;
 }
 
-interface RankedArticleRow {
+// One row shape, shared by the radar (top slice) and the evidence/timeline/
+// map lookups (full population) — see the "evidence consistency" note below
+// on why these must all come from the same query result.
+interface MatchingArticleRow {
   id: string;
   title: string;
   url: string;
@@ -50,15 +60,32 @@ interface MapRow {
   lat: number;
 }
 
-const RADAR_LIMIT = 7;
-const RISING_WITHIN_DAYS = 3;
-const STABLE_WITHIN_DAYS = 10;
+export interface BriefingRequest {
+  profileId: string;
+  /** Bounded 1-30 day window; omit for no time restriction (the default-question behavior). */
+  timeHorizonDays?: number;
+  /** Short topic phrase mapped through the shared tag vocabulary (lib/tags.ts); omit for no topic restriction. */
+  topicFocus?: string;
+}
 
-function directionFor(publishedAt: string): "rising" | "stable" | "declining" {
+const RADAR_LIMIT = 7;
+const NEW_WITHIN_DAYS = 3;
+const RECENT_WITHIN_DAYS = 10;
+// Safety bound on the full matching-article fetch, not a design cap: real
+// GDELT-scale data per the Demo Contract's own thresholds (docs/13 §4,
+// ~150-300 articles total) sits far under this, so it never re-truncates
+// the evidence-bearing population the way the old per-view LIMIT 7 did.
+const MAX_MATCHING_ROWS = 500;
+// A decade is an unbounded time horizon at this project's data scale -
+// used when the caller doesn't specify one, so every downstream query can
+// share one unconditional WHERE clause instead of branching SQL text.
+const UNBOUNDED_HORIZON_DAYS = 3650;
+
+function recencyFor(publishedAt: string): "new" | "recent" | "older" {
   const days = (Date.now() - new Date(publishedAt).getTime()) / (24 * 60 * 60 * 1000);
-  if (days <= RISING_WITHIN_DAYS) return "rising";
-  if (days <= STABLE_WITHIN_DAYS) return "stable";
-  return "declining";
+  if (days <= NEW_WITHIN_DAYS) return "new";
+  if (days <= RECENT_WITHIN_DAYS) return "recent";
+  return "older";
 }
 
 // Shared tag-score expression: sum of each matched tag's card weight.
@@ -71,7 +98,8 @@ const TAG_SCORE_SQL = `arraySum(arrayMap(
   arrayFilter(t -> has({tags:Array(String)}, t), tags)
 ))`;
 
-export async function getBriefingManifest(profileId: string): Promise<VisualResponseManifest> {
+export async function getBriefingManifest(request: BriefingRequest): Promise<VisualResponseManifest> {
+  const { profileId, timeHorizonDays, topicFocus } = request;
   const clickhouse = getClickHouseClient();
 
   const cardsResult = await clickhouse.query({
@@ -102,11 +130,11 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
   const wantedWeights = wantedTags.map((tag) => tagWeights.get(tag) ?? 0);
   const geoCountryList = Array.from(geoCountries);
 
-  const emptyManifest = (): VisualResponseManifest => ({
+  const emptyManifest = (verdict = "No material signals for this profile yet."): VisualResponseManifest => ({
     protocolVersion: 1,
     artifactId: randomUUID(),
     profileId,
-    verdict: "No material signals for this profile yet.",
+    verdict,
     views: { impactRadar: [], timeline: [], map: [] },
     evidence: [],
     createdAt: new Date().toISOString(),
@@ -116,14 +144,33 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
     return visualResponseManifestSchema.parse(emptyManifest());
   }
 
+  // Bounded interpretation only — topicFocus goes through the exact same
+  // keyword vocabulary used for profile cards, never a raw/arbitrary
+  // string match. A topic the vocabulary doesn't recognize resolves to no
+  // tags, which is the "clear bounded fallback": it silently behaves like
+  // no focus was given, rather than fabricating a filter or an answer.
+  const focusTags = topicFocus ? deriveTags(topicFocus) : [];
+  const focusApplied = focusTags.length > 0;
+  const focusClause = focusApplied ? "AND hasAny(tags, {focusTags:Array(String)})" : "";
+
+  const horizonApplied = typeof timeHorizonDays === "number" && timeHorizonDays > 0;
+  const horizonDays = horizonApplied ? Math.min(timeHorizonDays as number, 3650) : UNBOUNDED_HORIZON_DAYS;
+
   const queryParams = {
     tags: wantedTags,
     weights: wantedWeights,
     geoCountries: geoCountryList,
     geoBoost,
+    focusTags,
+    horizonDays,
   };
 
-  const rankedResult = await clickhouse.query({
+  // The single source of truth for "which articles match this request" -
+  // radar (top slice), evidence, and the timeline/map evidenceIds below
+  // all derive from this one result set, so a displayed count can never
+  // exceed the number of evidence entries actually available for it
+  // (docs/11 Risks.md — evidence/count consistency fix).
+  const matchingResult = await clickhouse.query({
     query: `
       SELECT id, title, url, published_at, country_code, tags, toString(h3) AS h3, tag_score + recency_score + geo_score AS total_score
       FROM (
@@ -133,25 +180,39 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
           1.0 / (1 + dateDiff('day', published_at, now())) AS recency_score,
           if(has({geoCountries:Array(String)}, country_code), {geoBoost:Float64}, 0) AS geo_score
         FROM articles
+        WHERE published_at >= now() - INTERVAL {horizonDays:UInt32} DAY
+        ${focusClause}
       )
       WHERE tag_score > 0
       ORDER BY total_score DESC
-      LIMIT {limit:UInt32}
+      LIMIT {maxRows:UInt32}
     `,
-    query_params: { ...queryParams, limit: RADAR_LIMIT },
+    query_params: { ...queryParams, maxRows: MAX_MATCHING_ROWS },
     format: "JSONEachRow",
   });
-  const rankedRows = await rankedResult.json<RankedArticleRow>();
+  const matchingRows = await matchingResult.json<MatchingArticleRow>();
 
-  if (rankedRows.length === 0) {
-    return visualResponseManifestSchema.parse(emptyManifest());
+  if (matchingRows.length === 0) {
+    return visualResponseManifestSchema.parse(
+      emptyManifest(
+        focusApplied || horizonApplied
+          ? "No material signals for this profile in that time window or topic."
+          : undefined,
+      ),
+    );
   }
 
+  // Same WHERE shape as the query above (hasAny(tags,...) is equivalent to
+  // tag_score > 0 given card weights are always positive, plus the same
+  // horizon/focus clauses) — this is what makes the population these two
+  // queries aggregate over identical to matchingRows, not a superset of it.
   const timelineResult = await clickhouse.query({
     query: `
       SELECT toDate(published_at) AS bucket_date, count() AS cnt
       FROM articles
       WHERE hasAny(tags, {tags:Array(String)})
+        AND published_at >= now() - INTERVAL {horizonDays:UInt32} DAY
+        ${focusClause}
       GROUP BY bucket_date
       ORDER BY bucket_date
     `,
@@ -179,6 +240,8 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
         tupleElement(h3ToGeo(h3_r5), 2) AS lat
       FROM articles
       WHERE hasAny(tags, {tags:Array(String)})
+        AND published_at >= now() - INTERVAL {horizonDays:UInt32} DAY
+        ${focusClause}
       GROUP BY h3_r5
       ORDER BY cnt DESC
     `,
@@ -187,15 +250,19 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
   });
   const mapRows = await mapResult.json<MapRow>();
 
-  const impactRadar = rankedRows.map((row) => ({
+  const impactRadar = matchingRows.slice(0, RADAR_LIMIT).map((row) => ({
     id: row.id,
     title: row.title,
     score: Math.round(row.total_score * 100) / 100,
-    direction: directionFor(row.published_at),
+    recency: recencyFor(row.published_at),
     evidenceIds: [row.id],
   }));
 
-  const evidence = rankedRows.map((row) => {
+  // Every matching row gets an evidence entry now, not just the top
+  // RADAR_LIMIT — otherwise a Timeline bucket or Map cell whose count
+  // includes a lower-ranked article would point at evidence that was
+  // never fetched, and the Evidence Drawer had nothing to show for it.
+  const evidence = matchingRows.map((row) => {
     const matchedTags = row.tags.filter((t) => wantedTags.includes(t));
     return {
       id: row.id,
@@ -212,12 +279,17 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
     };
   });
 
-  const top = rankedRows[0];
+  const top = matchingRows[0];
   if (!top) {
     return visualResponseManifestSchema.parse(emptyManifest());
   }
   const verdictTitle = top.title.length > 120 ? `${top.title.slice(0, 117)}...` : top.title;
-  const verdict = `Top signal: "${verdictTitle}" (${top.country_code}).`.slice(0, 160);
+  // Surfaces the agent's bounded interpretation back to the user (not
+  // hidden state) — only appended when actually applied, so the verdict
+  // never claims a scope narrower than what was really queried.
+  const focusDescriptor = focusApplied ? ` about ${topicFocus}` : "";
+  const horizonDescriptor = horizonApplied ? ` from the last ${timeHorizonDays} day${timeHorizonDays === 1 ? "" : "s"}` : "";
+  const verdict = `Top signal${focusDescriptor}${horizonDescriptor}: "${verdictTitle}" (${top.country_code}).`.slice(0, 160);
 
   // published_at is an ISO datetime string ("2026-07-20T12:00:00.000Z");
   // ClickHouse's toDate() bucket_date serializes as "YYYY-MM-DD" — the
@@ -235,7 +307,7 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
       timeline: timelineRows.map((row) => ({
         bucketStart: row.bucket_date,
         count: Number(row.cnt),
-        evidenceIds: rankedRows.filter((r) => bucketDateOf(r.published_at) === row.bucket_date).map((r) => r.id),
+        evidenceIds: matchingRows.filter((r) => bucketDateOf(r.published_at) === row.bucket_date).map((r) => r.id),
       })),
       map: mapRows.map((row) => ({
         h3: row.h3,
@@ -243,7 +315,7 @@ export async function getBriefingManifest(profileId: string): Promise<VisualResp
         label: row.label,
         lat: row.lat,
         lon: row.lon,
-        evidenceIds: rankedRows.filter((r) => r.h3 === row.h3).map((r) => r.id),
+        evidenceIds: matchingRows.filter((r) => r.h3 === row.h3).map((r) => r.id),
       })),
     },
     evidence,

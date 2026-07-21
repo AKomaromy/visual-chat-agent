@@ -2,7 +2,7 @@
 
 **See what changed. See why it matters to you.**
 
-Mirror is a personalized impact-intelligence chat agent. Instead of answering a question about the changing world with a paragraph, it answers with an interactive visual workspace: a one-line verdict, a ranked Impact Radar of the developments that matter most to *you*, a Timeline of their momentum, a Map of where they're happening, and an Evidence Drawer with a source behind every claim.
+Mirror is a personalized impact-intelligence chat agent. Instead of answering a question about the changing world with a paragraph, it answers with an interactive visual workspace: a one-line verdict, a ranked Impact Radar of the developments that matter most to *you*, a Timeline of when the relevant coverage happened, a Map of where it's happening, and an Evidence Drawer with a source behind every claim.
 
 The same question, asked by two different people, produces two visibly different answers — because relevance is computed against each person's explicit goals and interests, not a generic feed.
 
@@ -13,7 +13,7 @@ Built for the ClickHouse & Trigger.dev Virtual Summer Hackathon 2026.
 ## What it does
 
 1. A user has an editable, weighted profile — goals, interests, organizations, locations — shown as cards, not a hidden system prompt.
-2. They ask: **"What should I know today?"**
+2. They ask a question. The locked default, **"What should I know today?"**, is always one click away as a reliable baseline, but the input is editable — a question that names its own time window (e.g. "this week") and/or topic gets bounded-interpreted into a narrower ClickHouse request (see "How Trigger.dev is used").
 3. Mirror returns a coordinated visual workspace, not text: **Verdict Strip → Impact Radar → Timeline → Map → Evidence Drawer**.
 4. Selecting any Radar signal, Timeline bar, or Map point highlights the same items across every other view and opens the Evidence Drawer with the underlying source.
 5. Switching the active profile and re-asking the identical question produces a visibly different top signal, verdict, and evidence set — the same world, ranked differently for a different person.
@@ -23,7 +23,7 @@ Built for the ClickHouse & Trigger.dev Virtual Summer Hackathon 2026.
 ClickHouse is Mirror's **only** database and its analytical engine. It stores the event corpus, the editable profile cards, and does all of the real analytical work in SQL — nothing is computed or invented client-side or by the model:
 
 - **Personalized relevance ranking** — tag-weight matching against a profile's cards, blended with a recency decay and a geographic boost, entirely in a parameterized SQL query (`lib/briefing.ts`).
-- **Time-bucketed momentum** — `GROUP BY toDate(published_at)` behind the Timeline.
+- **Time-bucketed article counts** — `GROUP BY toDate(published_at)` behind the Timeline (a count of coverage per day, not a trend/momentum calculation).
 - **H3 geospatial aggregation** — `geoToH3`/`h3ToGeo` behind the Map, resolving each event to a hex cell and back to plottable coordinates.
 - Every ranked or plotted item carries a resolvable evidence ID back to a stored `articles` row — the Evidence Drawer renders the stored title, source, date, and location directly from that row.
 
@@ -31,7 +31,7 @@ ClickHouse is Mirror's **only** database and its analytical engine. It stores th
 
 Trigger.dev runs Mirror's conversation and its data pipeline:
 
-- **`chat.agent()`** (`trigger/chat.ts`, task id `mirror-agent`) runs the user conversation as a durable agent. It calls one typed tool, `getBriefing`, which runs the ClickHouse queries above and returns a schema-validated visual manifest — the model plans and narrates, it never invents UI, numbers, or SQL.
+- **`chat.agent()`** (`trigger/chat.ts`, task id `mirror-agent`) runs the user conversation as a durable agent. Its one job is bounded interpretation: it reads the user's literal question and extracts a small typed request — an optional time window (1-30 days) and/or topic focus — that narrows the one `getBriefing` tool call it always makes. The model never authors a ranking, score, evidence item, geography, or the verdict, and it never adds prose after calling the tool; every visible value comes from the schema-validated visual manifest ClickHouse's query returns. A deterministic grounding check discards any time window or topic the model's output doesn't actually trace back to words in the user's own question, so the locked default question reliably gets the unrestricted, unscoped result even though language models don't always follow "leave this optional field unset" instructions on their own.
 - **A separate, replayable ingestion task** (`trigger/seed-gdelt.ts`) loads real-world event data from the GDELT DOC 2.0 API into ClickHouse, so the demo never depends on a live third-party call at showtime.
 
 ## Current, honest status

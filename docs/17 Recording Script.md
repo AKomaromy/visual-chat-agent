@@ -43,7 +43,7 @@
 ### 0:15–1:00 — The visual answer streams in
 **Action:** Do not click. Let the workspace build in the contracted order.
 **Expected screen state, in order:** Verdict Strip → Impact Radar (5–7 ranked signals) → Timeline (bucketed counts, not a flat line) → Map (H3 points across ≥5 countries). No empty frames.
-**Say:** *"The answer isn't a report. Mirror ranked the developments most likely to affect Maya, then showed their momentum over time and where they're happening."*
+**Say:** *"The answer isn't a report. Mirror ranked the developments most likely to affect Maya, then showed when they happened and where they're happening."*
 
 ### 1:00–1:40 — Explore and verify (coordinated interaction + evidence)
 **Action, in this exact order:**

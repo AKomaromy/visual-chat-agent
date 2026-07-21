@@ -26,7 +26,10 @@ export const impactRadarItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   score: z.number(),
-  direction: z.enum(["rising", "stable", "declining"]),
+  // Honest recency labeling, not a claimed trend/momentum computation —
+  // this is purely how old the underlying article is (docs/11 Risks.md
+  // R-41), never presented as "rising"/"declining" interest or volume.
+  recency: z.enum(["new", "recent", "older"]),
   evidenceIds: z.array(z.string()),
 });
 

@@ -16,11 +16,9 @@ import type { EvidenceItem } from "@/lib/visual-response";
  */
 export function EvidenceDrawer({
   items,
-  hadSelectionWithNoEvidence,
   onClose,
 }: {
   items: EvidenceItem[];
-  hadSelectionWithNoEvidence: boolean;
   onClose: () => void;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -52,11 +50,7 @@ export function EvidenceDrawer({
       </div>
 
       {items.length === 0 ? (
-        <p className="text-sm text-neutral-500">
-          {hadSelectionWithNoEvidence
-            ? "This selection isn't one of the top-ranked signals, so no detailed evidence is loaded for it — see Impact Radar for the signals with full evidence."
-            : "Select a signal, timeline bar, or map point to see its evidence."}
-        </p>
+        <p className="text-sm text-neutral-500">Select a signal, timeline bar, or map point to see its evidence.</p>
       ) : (
         <ul className="flex flex-col gap-3">
           {items.map((item) => (

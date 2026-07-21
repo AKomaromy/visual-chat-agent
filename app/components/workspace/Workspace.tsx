@@ -16,10 +16,14 @@ import { EvidenceDrawer } from "./EvidenceDrawer";
  * ClickHouse. This component only tracks *which* mark is selected and
  * looks up the evidence that selection already points to.
  *
- * Fixed Demo Contract view order (docs/13 Demo Contract.md §5): Verdict
- * Strip → Impact Radar → Timeline → Map → Evidence Drawer (opens on
- * selection). Each view renders nothing rather than an empty frame when
- * its own array is empty (handled inside each component).
+ * Fixed Demo Contract view order at the semantic level (docs/13 Demo
+ * Contract.md §5): Verdict Strip → Impact Radar → Timeline → Map →
+ * Evidence Drawer. Laid out as Radar and Map side by side on wide
+ * viewports (hostile-judge hardening pass — a Radar selection needs to
+ * visibly coordinate with the Map without scrolling), Timeline directly
+ * below both, Evidence Drawer directly below that. Each view renders
+ * nothing rather than an empty frame when its own array is empty (handled
+ * inside each component).
  */
 export function Workspace({ manifest }: { manifest: VisualResponseManifest }) {
   const [selection, setSelection] = useState<WorkspaceSelection | null>(null);
@@ -39,26 +43,26 @@ export function Workspace({ manifest }: { manifest: VisualResponseManifest }) {
   }
 
   const evidenceById = new Map(manifest.evidence.map((e) => [e.id, e]));
+  // Every real selection (a radar item, a timeline bucket, a map cell)
+  // always resolves to at least one evidence entry now that lib/briefing.ts
+  // builds `evidence` from the same population it counts (the earlier
+  // "no evidence loaded for this selection" fallback is unreachable and
+  // was removed with it — see docs/11 Risks.md).
   const selectedEvidence = selection
     ? selection.evidenceIds
         .map((id) => evidenceById.get(id))
         .filter((e): e is NonNullable<typeof e> => e !== undefined)
     : [];
-  const hadSelectionWithNoEvidence = !!selection && selection.evidenceIds.length === 0;
 
   return (
     <div className="flex w-full flex-col gap-4">
       <VerdictStrip verdict={manifest.verdict} />
-      <ImpactRadar items={manifest.views.impactRadar} selection={selection} onSelect={setSelection} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr] lg:items-start">
+        <ImpactRadar items={manifest.views.impactRadar} selection={selection} onSelect={setSelection} />
+        <WorldMap cells={manifest.views.map} selection={selection} onSelect={setSelection} />
+      </div>
       <Timeline buckets={manifest.views.timeline} selection={selection} onSelect={setSelection} />
-      <WorldMap cells={manifest.views.map} selection={selection} onSelect={setSelection} />
-      {selection && (
-        <EvidenceDrawer
-          items={selectedEvidence}
-          hadSelectionWithNoEvidence={hadSelectionWithNoEvidence}
-          onClose={() => setSelection(null)}
-        />
-      )}
+      {selection && <EvidenceDrawer items={selectedEvidence} onClose={() => setSelection(null)} />}
     </div>
   );
 }

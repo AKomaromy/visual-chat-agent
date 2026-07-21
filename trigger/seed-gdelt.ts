@@ -156,6 +156,118 @@ async function fetchGdeltQuery(query: string, attempt = 1): Promise<GdeltArticle
   return parsed.articles ?? [];
 }
 
+// Extracted from the task's `run` so the exact same ingestion logic can be
+// exercised standalone (e.g. `npx tsx` from a local shell) against the same
+// ClickHouse Cloud destination — used to test whether a GDELT-reachability
+// blocker is specific to Trigger.dev Cloud's egress path rather than
+// GDELT itself, without needing a second ingestion architecture (docs/11
+// Risks.md R-05 addendum, hostile-judge hardening pass priority 6).
+// `logger.*` calls are safe no-ops outside an active Trigger.dev run.
+export async function runSeedGdelt() {
+  const clickhouse = getClickHouseClient();
+
+  // Excludes dev-fixture rows (trigger/load-dev-fixtures.ts, tagged
+  // DEV_FIXTURE_TAG) from the no-op check — those are a temporary Task 5
+  // workaround for the GDELT outage, not real seed data, and must never
+  // block or be mistaken for the real seed load this check guards.
+  const existingCountResult = await clickhouse.query({
+    query: `SELECT count() AS n FROM articles WHERE NOT has(tags, {fixtureTag:String})`,
+    query_params: { fixtureTag: DEV_FIXTURE_TAG },
+    format: "JSONEachRow",
+  });
+  const [existingCountRow] = await existingCountResult.json<{ n: string }>();
+  const existingCount = Number(existingCountRow?.n ?? 0);
+  if (existingCount > 0) {
+    logger.info("articles already populated with real data, no-op", { existingCount });
+    return { skipped: true, existingCount };
+  }
+
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const byUrl = new Map<string, { article: GdeltArticle; topics: Set<string> }>();
+  const perTopicFetched: Record<string, number> = {};
+
+  for (const { topic, query } of SEED_QUERIES) {
+    const articles = await fetchGdeltQuery(query);
+    perTopicFetched[topic] = articles.length;
+    logger.info("fetched GDELT topic", { topic, count: articles.length });
+
+    for (const article of articles) {
+      const existing = byUrl.get(article.url);
+      if (existing) {
+        existing.topics.add(topic);
+      } else {
+        byUrl.set(article.url, { article, topics: new Set([topic]) });
+      }
+    }
+
+    // Be a polite citizen of GDELT's rate limit between the 4-5 queries.
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  let skippedOld = 0;
+  let skippedUnmappedCountry = 0;
+  const countriesSeen = new Set<string>();
+  const rows: Array<{
+    id: string;
+    title: string;
+    url: string;
+    published_at: string;
+    tags: string[];
+    country_code: string;
+    latitude: number;
+    longitude: number;
+    tone: number;
+  }> = [];
+
+  for (const { article, topics } of byUrl.values()) {
+    const publishedAt = parseGdeltDate(article.seendate);
+    if (Number.isNaN(publishedAt.getTime()) || publishedAt < cutoff) {
+      skippedOld += 1;
+      continue;
+    }
+
+    const country = COUNTRY_LOOKUP[article.sourcecountry];
+    if (!country) {
+      skippedUnmappedCountry += 1;
+      continue;
+    }
+
+    const tags = Array.from(new Set([...deriveTags(article.title), ...topics]));
+
+    rows.push({
+      id: randomUUID(),
+      title: article.title,
+      url: article.url,
+      published_at: publishedAt.toISOString(),
+      tags,
+      country_code: country.code,
+      latitude: country.lat,
+      longitude: country.lon,
+      // GDELT DOC 2.0 (unlike GKG) returns no sentiment/tone field —
+      // left at a neutral 0 rather than fabricating a score. See
+      // docs/14 Engineering Handoff.md for this documented limitation.
+      tone: 0,
+    });
+    countriesSeen.add(country.code);
+  }
+
+  if (rows.length > 0) {
+    await clickhouse.insert({ table: "articles", values: rows, format: "JSONEachRow" });
+  }
+
+  const summary = {
+    totalInserted: rows.length,
+    perTopicFetched,
+    skippedOld,
+    skippedUnmappedCountry,
+    distinctCountries: countriesSeen.size,
+    countries: Array.from(countriesSeen).sort(),
+  };
+  logger.info("seed-gdelt complete", summary);
+
+  return { skipped: false, ...summary };
+}
+
 export const seedGdelt = task({
   id: "seed-gdelt",
   // Override the project's 60s default (trigger.config.ts) — 4 sequential
@@ -165,108 +277,5 @@ export const seedGdelt = task({
   // Caught live: a real run hit MAX_DURATION_EXCEEDED once GDELT recovered
   // from its prior outage but was still rate-limiting adjacent requests.
   maxDuration: 300,
-  run: async () => {
-    const clickhouse = getClickHouseClient();
-
-    // Excludes dev-fixture rows (trigger/load-dev-fixtures.ts, tagged
-    // DEV_FIXTURE_TAG) from the no-op check — those are a temporary Task 5
-    // workaround for the GDELT outage, not real seed data, and must never
-    // block or be mistaken for the real seed load this check guards.
-    const existingCountResult = await clickhouse.query({
-      query: `SELECT count() AS n FROM articles WHERE NOT has(tags, {fixtureTag:String})`,
-      query_params: { fixtureTag: DEV_FIXTURE_TAG },
-      format: "JSONEachRow",
-    });
-    const [existingCountRow] = await existingCountResult.json<{ n: string }>();
-    const existingCount = Number(existingCountRow?.n ?? 0);
-    if (existingCount > 0) {
-      logger.info("articles already populated with real data, no-op", { existingCount });
-      return { skipped: true, existingCount };
-    }
-
-    const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-    const byUrl = new Map<string, { article: GdeltArticle; topics: Set<string> }>();
-    const perTopicFetched: Record<string, number> = {};
-
-    for (const { topic, query } of SEED_QUERIES) {
-      const articles = await fetchGdeltQuery(query);
-      perTopicFetched[topic] = articles.length;
-      logger.info("fetched GDELT topic", { topic, count: articles.length });
-
-      for (const article of articles) {
-        const existing = byUrl.get(article.url);
-        if (existing) {
-          existing.topics.add(topic);
-        } else {
-          byUrl.set(article.url, { article, topics: new Set([topic]) });
-        }
-      }
-
-      // Be a polite citizen of GDELT's rate limit between the 4-5 queries.
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-
-    let skippedOld = 0;
-    let skippedUnmappedCountry = 0;
-    const countriesSeen = new Set<string>();
-    const rows: Array<{
-      id: string;
-      title: string;
-      url: string;
-      published_at: string;
-      tags: string[];
-      country_code: string;
-      latitude: number;
-      longitude: number;
-      tone: number;
-    }> = [];
-
-    for (const { article, topics } of byUrl.values()) {
-      const publishedAt = parseGdeltDate(article.seendate);
-      if (Number.isNaN(publishedAt.getTime()) || publishedAt < cutoff) {
-        skippedOld += 1;
-        continue;
-      }
-
-      const country = COUNTRY_LOOKUP[article.sourcecountry];
-      if (!country) {
-        skippedUnmappedCountry += 1;
-        continue;
-      }
-
-      const tags = Array.from(new Set([...deriveTags(article.title), ...topics]));
-
-      rows.push({
-        id: randomUUID(),
-        title: article.title,
-        url: article.url,
-        published_at: publishedAt.toISOString(),
-        tags,
-        country_code: country.code,
-        latitude: country.lat,
-        longitude: country.lon,
-        // GDELT DOC 2.0 (unlike GKG) returns no sentiment/tone field —
-        // left at a neutral 0 rather than fabricating a score. See
-        // docs/14 Engineering Handoff.md for this documented limitation.
-        tone: 0,
-      });
-      countriesSeen.add(country.code);
-    }
-
-    if (rows.length > 0) {
-      await clickhouse.insert({ table: "articles", values: rows, format: "JSONEachRow" });
-    }
-
-    const summary = {
-      totalInserted: rows.length,
-      perTopicFetched,
-      skippedOld,
-      skippedUnmappedCountry,
-      distinctCountries: countriesSeen.size,
-      countries: Array.from(countriesSeen).sort(),
-    };
-    logger.info("seed-gdelt complete", summary);
-
-    return { skipped: false, ...summary };
-  },
+  run: () => runSeedGdelt(),
 });

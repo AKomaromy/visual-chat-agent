@@ -36,6 +36,8 @@ Trigger.dev runs Mirror's conversation and its data pipeline:
 
 ## Current, honest status
 
+**In one sentence:** live OpenAI, Trigger.dev, and ClickHouse execution over a controlled fixture news dataset. Every conversation turn, ClickHouse query, and rendered view below is real and exercised against live infrastructure — the *news content* itself is not yet real-world GDELT data, so it should not be described as "real data" or "live news" until Task 4's ingestion actually lands (see the table's last row).
+
 This section is updated to reflect what has actually been verified, not what's planned. See [`docs/14 Engineering Handoff.md`](docs/14%20Engineering%20Handoff.md) for full detail and [`docs/11 Risks.md`](docs/11%20Risks.md) for every defect found along the way.
 
 | Capability | Status |
@@ -48,7 +50,7 @@ This section is updated to reflect what has actually been verified, not what's p
 | Two profiles → visibly different answers | 🟡 **Fixture-verified** — zero top-signal overlap between profiles on fixture data; not yet re-confirmed on real GDELT titles |
 | Real GDELT ingestion into ClickHouse | ⛔ **Blocked** — GDELT's API is intermittently unreachable specifically from Trigger.dev Cloud's network (see Risks R-05); a permanent rerun script (`scripts/verify-task4-seed-gdelt-live.ts`) is ready and will be run the moment it clears |
 
-**What this means concretely:** every view, query, and interaction described above is real and has been exercised against a live system — just currently against a small, honestly-labelled set of development fixtures (`[DEV FIXTURE]`-prefixed titles, fake `fixture.mirror-dev.test` URLs) rather than a full real-world GDELT corpus. The fixtures exist solely so the ranking/timeline/map logic could be built and proven correct while GDELT ingestion was blocked; they are excluded from Task 4's own completion check and will be cleared once a real seed lands.
+**What this means concretely:** every view, query, and interaction described above is real and has been exercised against a live system — just currently against a small, honestly-labelled set of development fixtures (`[DEV FIXTURE]`-prefixed titles, fake `fixture.mirror-dev.test` URLs) rather than a full real-world GDELT corpus. The fixtures exist solely so the ranking/timeline/map logic could be built and proven correct while GDELT ingestion was blocked; they are excluded from Task 4's own completion check and will be cleared once a real seed lands. Until then, the accurate description of the judged experience is **live OpenAI, Trigger.dev, and ClickHouse execution over a controlled fixture news dataset** — not "real data" or "live news."
 
 ## What's deliberately not in this build
 

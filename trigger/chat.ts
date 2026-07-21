@@ -118,6 +118,16 @@ export const tools = {
 export const mirrorAgent = chat.agent({
   id: "mirror-agent",
   tools,
+  // Override the project's 60s default (trigger.config.ts). Prod
+  // verification (hostile-judge hardening pass, credential-rotation
+  // re-check) hit a real MAX_DURATION_EXCEEDED on a cold-start run;
+  // several local runs the same session also finished in the 50-59s
+  // range against that same 60s budget, so this was a tight-margin
+  // duration issue, not a credential or logic defect. 180s gives
+  // headroom for a cold worker start plus normal model-call latency
+  // without changing any agent behavior, model, or scope - same pattern
+  // already used for seed-gdelt.ts's own maxDuration override.
+  maxDuration: 180,
   // Discovered while preparing live verification: run() only sees
   // `messages`/`tools`/`signal` - clientData (the profileId set by the
   // frontend's profile switcher, app/components/chat.tsx) was never

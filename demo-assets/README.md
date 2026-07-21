@@ -1,6 +1,6 @@
 # Demo Assets
 
-Curated screenshots of Mirror's current best state, captured against the real deployed pipeline (Trigger.dev `chat.agent()` → ClickHouse-backed `getBriefing` → streamed manifest) rendered in the actual browser UI — not mockups. Captured with a headless Chromium pass (`chromium.launch` via Playwright) at a 1280×900 viewport, against the controlled dev fixtures (Task 4's real GDELT seed is still blocked — see `docs/11 Risks.md` R-05).
+Curated screenshots of Mirror's current best state, captured against the real deployed pipeline (Trigger.dev `chat.agent()` → ClickHouse-backed `getBriefing` → streamed manifest) rendered in the actual browser UI — not mockups. Captured with a headless Chromium pass (`chromium.launch` via Playwright) at a 1280×900 viewport. **Accurate description: live OpenAI, Trigger.dev, and ClickHouse execution over a controlled fixture news dataset** — Task 4's real GDELT seed is still blocked (see `docs/11 Risks.md` R-05), so the article content itself is not real/live news yet.
 
 These are the canonical visual assets for judging, documentation, README, Devpost, and presentation. Replace with newer captures only after a meaningful visual change — don't recapture for insignificant edits. **Recaptured in the Session 7 hostile-judge hardening pass** — the prior set showed a narrower single-column layout, arrow-glyph "direction" labels, and a fixed non-editable question button, none of which reflect the current build.
 

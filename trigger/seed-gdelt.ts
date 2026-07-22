@@ -133,15 +133,25 @@ async function fetchGdeltQuery(query: string, attempt = 1): Promise<GdeltArticle
   let response: Response;
   try {
     response = await fetch(`${GDELT_ENDPOINT}?${params.toString()}`, {
-      headers: { "User-Agent": "mirror-hackathon-seed/1.0" },
+      // A generic/bot-looking UA (previously "mirror-hackathon-seed/1.0")
+      // gets treated more harshly by GDELT's own throttling than a
+      // browser-shaped one with contact info — see docs/11 Risks.md R-05.
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; MirrorNewsAgent/1.0; +mailto:andrew.komaromy@gmail.com)",
+      },
     });
   } catch (err) {
     const cause = err instanceof Error ? (err.cause ?? err.message) : err;
     throw new Error(`GDELT fetch failed: ${String(cause)}`, { cause: err });
   }
 
-  if (response.status === 429 && attempt <= 4) {
-    const backoffMs = attempt * 5000;
+  if (response.status === 429 && attempt <= 3) {
+    // GDELT's documented guidance is 60s after the first 429, 120s after
+    // subsequent ones (docs/11 Risks.md R-05) — the prior 5s/10s/15s/20s
+    // backoff was far too aggressive for how GDELT's own throttling
+    // actually resets.
+    const backoffMs = attempt === 1 ? 60000 : 120000;
     logger.warn("GDELT rate-limited, backing off", { attempt, backoffMs });
     await new Promise((r) => setTimeout(r, backoffMs));
     return fetchGdeltQuery(query, attempt + 1);
@@ -271,11 +281,12 @@ export async function runSeedGdelt() {
 export const seedGdelt = task({
   id: "seed-gdelt",
   // Override the project's 60s default (trigger.config.ts) — 4 sequential
-  // GDELT queries with built-in 429 backoff (up to 4 retries at
-  // 5s/10s/15s/20s each) plus the deliberate 2s politeness delay between
-  // queries can exceed 60s CPU time even without a full ingestion outage.
-  // Caught live: a real run hit MAX_DURATION_EXCEEDED once GDELT recovered
-  // from its prior outage but was still rate-limiting adjacent requests.
-  maxDuration: 300,
+  // GDELT queries with built-in 429 backoff (up to 3 retries at
+  // 60s/120s/120s each, per GDELT's documented throttling behavior) plus
+  // the deliberate 2s politeness delay between queries can exceed 300s in
+  // the worst case. Caught live: a real run hit MAX_DURATION_EXCEEDED once
+  // GDELT recovered from its prior outage but was still rate-limiting
+  // adjacent requests.
+  maxDuration: 600,
   run: () => runSeedGdelt(),
 });
